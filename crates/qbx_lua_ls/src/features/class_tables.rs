@@ -332,8 +332,17 @@ impl<'a, 'b> Classes<'a, 'b> {
 
     /// The fields of `member` that a table setting the names `given` leaves out although their
     /// type does not allow `nil`; of a class, those that `required_fields` lists. Arrays, maps and
-    /// tuples require none.
+    /// tuples require none. Without `strict`, as in lua-language-server, neither do shapes and
+    /// classes given type arguments, as `List<string>`; TypeScript requires their fields too.
     fn missing(&self, member: &Member, given: &[&str]) -> Vec<SmolStr> {
+        let strict_only = match member {
+            Member::Class(_, args, _) => !args.is_empty(),
+            Member::Shape(..) => true,
+            Member::Table(..) => false,
+        };
+        if strict_only && !self.infer.strict() {
+            return Vec::new();
+        }
         let fields: Vec<(SmolStr, Type, FileId)> = match member {
             Member::Class(class, args, from) => {
                 let fields = self.required_fields(class, args, *from).into_iter();
@@ -580,7 +589,14 @@ impl<'a, 'b> Classes<'a, 'b> {
     /// literal like `[1]`, or else the value of an index that takes the key. A key such as `integer`
     /// that may be several fields has no one type.
     pub fn field_type(&self, class: &str, args: &[Type], from: FileId, key: &Key) -> Option<(Type, FileId)> {
-        let field = match key {
+        self.declared_field_type(class, args, from, key)
+            .or_else(|| self.index_for(class, args, from, &key.ty(), &mut FxHashSet::default(), 0))
+    }
+
+    /// The type of the `@field` that `key` of a `class` table names, of a name or of a literal like
+    /// `[1]`, as `field_type` reads it, but not the value of an index that takes the key.
+    fn declared_field_type(&self, class: &str, args: &[Type], from: FileId, key: &Key) -> Option<(Type, FileId)> {
+        match key {
             Key::Name(name) => {
                 self.fields(class, args, from).into_iter().find(|field| field.name == *name).map(|f| (f.ty, f.file))
             }
@@ -589,8 +605,7 @@ impl<'a, 'b> Classes<'a, 'b> {
                 fields.find(|(key, ..)| key == ty).map(|(_, v, file)| (v, file))
             }
             Key::Typed(_) => None,
-        };
-        field.or_else(|| self.index_for(class, args, from, &key.ty(), &mut FxHashSet::default(), 0))
+        }
     }
 
     /// The value type of the first index of `class`, given the type arguments `args`, or of a parent
@@ -844,10 +859,11 @@ impl<'a, 'b> Classes<'a, 'b> {
 
 /// `given`, the type of the `value` that an assignment stores or a `return` returns, as
 /// `assign-type-mismatch` and `return-type-mismatch` check it: the `nil` that the type of a field it
-/// reads allows does not count, as lua-language-server reads fields.
-pub fn checked_value(value: Option<&Expr>, given: Type) -> Type {
+/// reads allows does not count, as lua-language-server reads fields, unless `strict` asks for what
+/// TypeScript reports.
+pub fn checked_value(infer: &Infer, value: Option<&Expr>, given: Type) -> Type {
     match value.map(|value| &value.unparen().kind) {
-        Some(ExprKind::Field { .. } | ExprKind::Index { .. }) => given.without_nil(),
+        Some(ExprKind::Field { .. } | ExprKind::Index { .. }) if !infer.strict() => given.without_nil(),
         _ => given,
     }
 }
@@ -894,6 +910,9 @@ pub struct Access<'c> {
     pub owner: Type,
     /// Where that value is written, like `a.b` in `a.b.c = 1`.
     pub holder: Span,
+    /// The expression that gives that value, like `a.b` in `a.b.c = 1`; `None` for the table that
+    /// `function a.b:c()` sets `c` on.
+    pub base: Option<&'c Expr>,
     pub key: Key<'c>,
     /// Where the name or key is written.
     pub span: Span,
@@ -950,8 +969,8 @@ impl<'c> Visitor<'c> for Accesses<'_, '_, 'c> {
                         Some((base, key, span)) => {
                             let on_class_table = self.is_class_table(base);
                             let owner = self.infer.expr(base);
-                            let (holder, value) = (base.span, exprs.get(i));
-                            self.out.push(Access { owner, holder, key, span, value, on_class_table, read: None });
+                            let (holder, value, base) = (base.span, exprs.get(i), Some(base));
+                            self.out.push(Access { owner, holder, base, key, span, value, on_class_table, read: None });
                             // The target's value and key are read.
                             visit::walk_expr(self, target);
                         }
@@ -976,7 +995,9 @@ impl<'c> Visitor<'c> for Accesses<'_, '_, 'c> {
                     let owner = self.infer.func_name_owner_type(&owner);
                     let key = Key::Name(&field.text);
                     let span = field.span;
-                    self.out.push(Access { owner, holder, key, span, value: None, on_class_table, read: None });
+                    let access =
+                        Access { owner, holder, base: None, key, span, value: None, on_class_table, read: None };
+                    self.out.push(access);
                 }
             }
             _ => {}
@@ -996,7 +1017,16 @@ impl<'c> Visitor<'c> for Accesses<'_, '_, 'c> {
             if let Some((base, key, span)) = read {
                 let owner = self.infer.expr(base);
                 let (holder, read) = (base.span, Some(base));
-                self.out.push(Access { owner, holder, key, span, value: None, on_class_table: false, read });
+                self.out.push(Access {
+                    owner,
+                    holder,
+                    base: read,
+                    key,
+                    span,
+                    value: None,
+                    on_class_table: false,
+                    read,
+                });
             }
         }
         visit::walk_expr(self, expr);
@@ -1088,7 +1118,7 @@ fn checked_fields(infer: &Infer, chunk: &Chunk, unknowns: Option<&dyn Fn(&Expr) 
             }
             return;
         }
-        let given = checked_value(Some(value), given);
+        let given = checked_value(infer, Some(value), given);
         if let Some(part) = classes.rejected_part(&ty, file, &given) {
             let shown = classes.shown(&ty, file, &given, &part);
             out.push((value.span, format!("Cannot assign `{shown}` to {target} of type `{ty}`")));
@@ -1112,10 +1142,20 @@ fn checked_fields(infer: &Infer, chunk: &Chunk, unknowns: Option<&dyn Fn(&Expr) 
         }
     }
     for access in accesses(infer, chunk, false) {
-        // `value.field = nil` clears a field only when its type allows `nil`, as `string?` does.
+        // With `strict`, `value.field = nil` clears a field only when its type allows `nil`, as
+        // `string?` does, as TypeScript reads it. lua-language-server lets any field be cleared.
+        // An entry that only an index takes, as `names[id] = nil` for `---@field [number] string`,
+        // is removed that way, as one of an array or a `table<K, V>` is.
+        let clears = access.value.is_some_and(|value| matches!(value.kind, ExprKind::Nil));
+        if clears && !infer.strict() {
+            continue;
+        }
         if let (Some(value), Some((class, args, view))) =
             (access.value, classes.class_of(&access.owner, classes.file()))
         {
+            if clears && classes.declared_field_type(&class, &args, view, &access.key).is_none() {
+                continue;
+            }
             check(classes.field_type(&class, &args, view, &access.key), &access.key, value);
         }
     }
