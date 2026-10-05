@@ -66,11 +66,8 @@ impl Security<'_, '_> {
         // A parameter table next to the query means values are bound; what is concatenated then is
         // structure (a WHERE clause, a column list), which placeholders cannot express.
         let binds_parameters = args.get(1).is_some_and(|arg| !matches!(arg.kind, ExprKind::Function(_)));
-        if binds_parameters {
-            return;
-        }
         let built = match &query.unparen().kind {
-            ExprKind::Binary { op: BinOp::Concat, .. } => has_dynamic_part(query),
+            ExprKind::Binary { op: BinOp::Concat, .. } => !binds_parameters && has_dynamic_part(query),
             ExprKind::MethodCall { base, method, args, .. } if method.text == "format" && !args.is_empty() => {
                 let only_identifiers = |text: &str| text.matches("%s").count() == text.matches("`%s`").count();
                 base.unparen().as_string().is_some_and(|text| !only_identifiers(text))
