@@ -331,6 +331,9 @@ fn sql_must_use_placeholders() {
         lint("local id = 1\nMySQL.query.await(('SELECT * FROM players WHERE id = %s'):format(id))"),
         ["security/sql-concatenation"]
     );
+    assert_eq!(
+        lint("local tableName, tableColumn, plateColumn, plate = 'a', 'b', 'c', 'd'\nMySQL.update.await(\n('UPDATE %s SET %s = 0 WHERE %s = ?'):format(tableName, tableColumn, plateColumn), { plate })"), ["security/sql-concatenation"]
+    );
     assert_eq!(lint("local id = 1\nMySQL.query('SELECT * FROM players WHERE id = ?', { id })"), Vec::<&str>::new());
     assert_eq!(lint("MySQL.query('SELECT * FROM ' .. 'players')"), Vec::<&str>::new());
     assert_eq!(
