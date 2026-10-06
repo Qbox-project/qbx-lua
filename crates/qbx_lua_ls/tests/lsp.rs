@@ -6617,6 +6617,31 @@ fn open_files_keep_their_hints_when_the_client_spells_uris_its_own_way() {
     assert_eq!(codes(&client, &indexed).unwrap(), ["lowercase-global"]);
 }
 
+#[test]
+fn closed_files_are_reported_when_the_client_sends_nothing_after_initialized() {
+    // A client that registers no file watchers has no request of the server to answer.
+    let mut client = Client::start_with_capabilities(fixture_root(), json!({}));
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !client.diagnostics.values().any(|list| !list.as_array().unwrap().is_empty()) {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let message = client.connection.receiver.recv_timeout(left).expect("no diagnostics were published");
+        client.handle_incoming(message);
+    }
+}
+
+#[test]
+fn a_request_sent_right_after_initialized_is_answered_before_the_workspace_is_checked() {
+    let mut client = Client::start_with_capabilities(fixture_root(), json!({}));
+    // The request arrives once the server has indexed the workspace, as a client in another
+    // process may send it.
+    while !client.logs.iter().any(|log| log.starts_with("indexed ")) {
+        let message = client.connection.receiver.recv_timeout(Duration::from_secs(20)).expect("no index log");
+        client.handle_incoming(message);
+    }
+    client.request("qbx/status", Value::Null);
+    assert!(client.diagnostics.is_empty(), "the files nobody has open are checked once the request is answered");
+}
+
 /// The findings of `file` for the given codes as (code, line, message), sorted by line.
 fn findings(client: &mut Client, file: &str, codes: &[&str]) -> Vec<(String, u64, String)> {
     client.diagnostics_for(file);
