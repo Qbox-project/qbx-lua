@@ -224,6 +224,12 @@ after `local type = type`, and not `table.type` of ox_lib. Where one of
 several checks held, as inside `if type(value) == "string" or type(value) == "number" then`, the
 local is of the kinds they let through.
 
+In a false `and` or a true `or`, a side that tells nothing about a local counts by its type, as only
+`nil` and `false` are false in Lua. A call that returns a `number`, a string, a table or a function is
+never false, so for a `number|fun(ped: number): number`,
+`type(max) == "function" and max(ped) or max` is a `number`: the `or` side only runs when `max` is no
+function. A side whose type may be `nil` or `false`, as a `number?`, tells nothing.
+
 A guard on a local that is never assigned again also tells what the value it is declared with does,
 as TypeScript reads an aliased condition, about the locals in that value that are never assigned
 again either:

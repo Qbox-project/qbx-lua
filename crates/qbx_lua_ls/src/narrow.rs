@@ -48,6 +48,12 @@ pub enum Fact {
     SameAs { other: LocalId, at: u32 },
     /// It differs from the value of the local `other` where the comparison reads it, at `at`.
     NotSameAs { other: LocalId, at: u32 },
+    /// The side of an `and` or `or` at `side` was true, or false without `truthy`, which tells
+    /// nothing about the value itself. It stands for that side in an alternative of `AnyOf`, which
+    /// `Infer::facts_left` drops when the type of the side there has no such value: after
+    /// `type(max) == "function" and max(ped)` is false, `max` is no function when `max(ped)` gives a
+    /// `number`, which is never false.
+    Operand { side: Span, truthy: bool },
 }
 
 impl Fact {
@@ -114,7 +120,7 @@ impl Fact {
     fn apply_part(&self, ty: &Type) -> Option<Type> {
         let unknown = matches!(ty, Type::Unknown | Type::Any);
         match self {
-            Fact::SameAs { .. } | Fact::NotSameAs { .. } => Some(ty.clone()),
+            Fact::SameAs { .. } | Fact::NotSameAs { .. } | Fact::Operand { .. } => Some(ty.clone()),
             Fact::AnyOf(alternatives) => {
                 let kept: Vec<Type> = alternatives
                     .iter()
@@ -215,6 +221,18 @@ fn never_false(expr: &Expr) -> bool {
             | ExprKind::Table(_)
             | ExprKind::Function(_)
     )
+}
+
+/// Whether `expr` is a boolean that may be either, as a comparison or a `not` gives, so its type
+/// tells nothing about which it was.
+fn either_boolean(expr: &Expr) -> bool {
+    match &expr.unparen().kind {
+        ExprKind::Binary { op, .. } => {
+            matches!(op, BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge)
+        }
+        ExprKind::Unary { op: UnOp::Not, .. } => true,
+        _ => false,
+    }
 }
 
 /// The index of the declaration of a local among the origins of the values it holds.
@@ -1974,7 +1992,10 @@ impl<'a, 'r> Walker<'a, 'r> {
     }
 
     /// Adds what one of `lhs` and `rhs` being true, or false without `holds`, tells: for each local
-    /// that both tell something about, that the facts of one of them hold.
+    /// that a side tells something about, that the facts of one of them hold. A side that tells
+    /// nothing about the local stands as a `Fact::Operand`, which leaves the other side's facts when
+    /// its type has no such value, as a call that gives a `number` is never false. One whose value is
+    /// a boolean that may be either, as a comparison, leaves nothing known.
     fn either(&self, lhs: &Expr, rhs: &Expr, holds: bool, out: &mut Facts) {
         let (mut left, mut right) = (Facts::new(), Facts::new());
         self.facts(lhs, holds, &mut left);
@@ -1983,16 +2004,21 @@ impl<'a, 'r> Walker<'a, 'r> {
             facts.iter().filter(|(of, _)| *of == local).map(|(_, fact)| fact.clone()).collect()
         };
         let mut locals: Vec<LocalId> = Vec::new();
-        for (local, _) in &left {
+        for (local, _) in left.iter().chain(&right) {
             if !locals.contains(local) {
                 locals.push(*local);
             }
         }
         for local in locals {
-            let second = about(&right, local);
-            if !second.is_empty() {
-                out.push((local, Fact::AnyOf(vec![about(&left, local), second])));
+            let sides = [(lhs, about(&left, local)), (rhs, about(&right, local))];
+            if sides.iter().any(|(side, facts)| facts.is_empty() && either_boolean(side)) {
+                continue;
             }
+            let alternatives = sides.into_iter().map(|(side, facts)| match facts.is_empty() {
+                true => vec![Fact::Operand { side: side.span, truthy: holds }],
+                false => facts,
+            });
+            out.push((local, Fact::AnyOf(alternatives.collect())));
         }
     }
 

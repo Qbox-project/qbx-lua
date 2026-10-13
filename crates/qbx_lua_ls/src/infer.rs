@@ -14,7 +14,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::callback_wrappers::{self, Wrapper};
 use crate::index::{instance_class, instance_owner, ClassDef, Distance, FileId, Index, Symbol, SymbolKind};
-use crate::locate::statement_at;
+use crate::locate::{expression_at, statement_at};
 use crate::luacats::{applies_on, own_type, parse_doc_lines, CastEntry, DocExtend, DocGroup, DocOperator};
 use crate::narrow::{Casts, Fact, Flow, Origin, Version, DECLARATION};
 use crate::types::{CallbackRole, FunType, Param, Shape, ShapeField, Type, TypeName, TypeParser};
@@ -1119,6 +1119,11 @@ impl<'a> Infer<'a> {
         let (other, at, equal) = match fact {
             Fact::SameAs { other, at } => (*other, *at, true),
             Fact::NotSameAs { other, at } => (*other, *at, false),
+            Fact::AnyOf(alternatives)
+                if alternatives.iter().flatten().any(|fact| matches!(fact, Fact::Operand { .. })) =>
+            {
+                return [self.possible_alternatives(alternatives).map(Cow::Owned), None];
+            }
             _ => return [Some(Cow::Borrowed(fact)), None],
         };
         let ty = self.guarded(|| self.expand_aliases(&self.local_type_at(other, at), 0));
@@ -1143,6 +1148,36 @@ impl<'a> Infer<'a> {
             }
             (_, false) => [None, None],
         }
+    }
+
+    /// The facts of `alternatives`, those of an `AnyOf`, that may hold: each alternative whose
+    /// `Fact::Operand`s stand for a side of an `and` or `or` that its type lets be true, or false, as
+    /// the operand says. `None` when none may, which tells nothing.
+    fn possible_alternatives(&self, alternatives: &[Vec<Fact>]) -> Option<Fact> {
+        let possible = |fact: &Fact| match fact {
+            Fact::Operand { side, truthy } => self.operand_may_be(*side, *truthy),
+            _ => true,
+        };
+        let kept: Vec<Vec<Fact>> = alternatives.iter().filter(|facts| facts.iter().all(possible)).cloned().collect();
+        (!kept.is_empty()).then_some(Fact::AnyOf(kept))
+    }
+
+    /// Whether the side of an `and` or `or` at `side` may be true there, or false without `truthy`,
+    /// as its type tells: a number, a string, a table or a function is never false, and `nil` never
+    /// true. A type that tells nothing, as `unknown`, a `boolean` or a generic, may be either.
+    fn operand_may_be(&self, side: Span, truthy: bool) -> bool {
+        let Some(expr) = expression_at(self.ctx.chunk, side) else { return true };
+        let ty = self.guarded(|| self.expand_aliases(&self.expr(expr), 0));
+        let parts = match &ty {
+            Type::Union(parts) => &parts[..],
+            one => std::slice::from_ref(one),
+        };
+        parts.iter().any(|part| match part {
+            Type::Nil | Type::BooleanLit(false) => !truthy,
+            Type::Unknown | Type::Any | Type::Boolean | Type::Variadic(_) | Type::Require(_) => true,
+            part if self.names_no_type(part) => true,
+            _ => truthy,
+        })
     }
 
     /// `ty`, the type of the field of a local that `expr` reads, as `self.target` or `data.job`,

@@ -16014,3 +16014,62 @@ print(message, reassignedTarget, reassignedAlias, failed, kinds, field)
          aliased condition, unless one of them is assigned again"
     );
 }
+
+#[test]
+fn a_side_of_and_or_that_tells_nothing_counts_by_its_type() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@param max number|fun(ped: number): number
+---@return number
+local function always(max)
+    local found = type(max) == 'function' and max(1) or max
+    return found
+end
+
+---@param max number|fun(ped: number): number?
+---@return number
+local function maybe(max)
+    local missing = type(max) == 'function' and max(1) or max
+    return missing
+end
+
+---@param value string|fun(): table
+local function built(value)
+    if not (type(value) == 'function' and value()) then
+        return value
+    end
+end
+
+---@param flag? boolean
+---@param name? string
+local function flagged(flag, name)
+    if not (name and flag) then
+        return name
+    end
+end
+print(always, maybe, built, flagged)
+";
+    client.open_with(CLIENT, text);
+    let hovers = [
+        ("local found", 6, "local found: number"),
+        ("local missing", 6, "local missing: number|(fun(ped: number): number?)"),
+        ("return value", 7, "(parameter) value: string"),
+        ("return name", 7, "(parameter) name: string?"),
+    ];
+    for (needle, delta, expected) in hovers {
+        let (l, c) = pos(text, needle, delta);
+        let found = client.hover_text(CLIENT, l, c);
+        assert!(found.contains(expected), "{needle}+{delta}: expected {expected:?} in {found}");
+    }
+    for strict in [false, true] {
+        client.set_strict(strict);
+        let lines: Vec<u64> =
+            findings(&mut client, CLIENT, &["return-type-mismatch"]).into_iter().map(|(_, line, _)| line).collect();
+        assert_eq!(
+            lines,
+            [pos(text, "return missing", 0).0 as u64],
+            "a call that gives a number is never false, so the `or` side only runs when the `and` side before it \
+             failed, while one that may give `nil` tells nothing (strict: {strict})"
+        );
+    }
+}

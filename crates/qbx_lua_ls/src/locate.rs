@@ -214,6 +214,35 @@ pub fn statement_at(chunk: &Chunk, start: u32) -> Option<&Stmt> {
     finder.found
 }
 
+/// The outermost expression that spans `span`, at any depth.
+pub fn expression_at(chunk: &Chunk, span: Span) -> Option<&Expr> {
+    struct Finder<'a> {
+        span: Span,
+        found: Option<&'a Expr>,
+    }
+    impl<'a> Visitor<'a> for Finder<'a> {
+        fn visit_stmt(&mut self, stmt: &'a Stmt) {
+            if self.found.is_none() && stmt.span.contains_inclusive(self.span.start) {
+                visit::walk_stmt(self, stmt);
+            }
+        }
+
+        fn visit_expr(&mut self, expr: &'a Expr) {
+            if self.found.is_some() || !expr.span.contains_inclusive(self.span.start) {
+                return;
+            }
+            if expr.span == self.span {
+                self.found = Some(expr);
+                return;
+            }
+            visit::walk_expr(self, expr);
+        }
+    }
+    let mut finder = Finder { span, found: None };
+    finder.visit_block(&chunk.block);
+    finder.found
+}
+
 pub fn locate(chunk: &Chunk, offset: u32) -> Located<'_> {
     let mut locator =
         Locator { offset, member: None, call: None, callee: None, string: None, func_name: None, table_in_call: None };
