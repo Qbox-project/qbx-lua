@@ -64,6 +64,9 @@ const GUARDED: &str = "if IsDuplicityVersion() then\n\
     RegisterNetEvent('demo:server', function(serverValue) end)\n\
     RegisterNetEvent('demo:both', function(serverValue) end)\n\
     lib.callback.register('demo:callback', function(source, serverValue) end)\n\
+    ---@param reset boolean\n\
+    ---@param model? string\n\
+    RegisterNetEvent('demo:documented', function(reset, model, data) end)\n\
 else\n\
     AddEventHandler('demo:client', function(clientValue) end)\n\
     AddEventHandler('demo:both', function(clientValue) end)\n\
@@ -84,7 +87,7 @@ fn guarded_event_diagnostics_match_the_cli() {
     let (fixture, mut ws) = event_workspace();
     let refs = ws.crossrefs();
     let mut cli = CrossRefs::default();
-    cli.collect(&qbx_lua_syntax::parse(GUARDED), Some(Side::Shared), Some("demo"));
+    cli.collect(GUARDED, &qbx_lua_syntax::parse(GUARDED), Some(Side::Shared), Some("demo"));
     for (name, expected) in cli.events {
         let actual = &refs.events[&name];
         assert_eq!(actual.len(), expected.len(), "{name}");
@@ -93,6 +96,8 @@ fn guarded_event_diagnostics_match_the_cli() {
             assert_eq!(actual.handler, expected.handler, "{name}");
         }
     }
+    let documented = refs.events["demo:documented"][0].handler.unwrap();
+    assert_eq!((documented.params, documented.required), (3, 1), "`model?` and the undocumented `data` after it");
     let doc = fixture.document(&mut ws, "demo/client.lua", "TriggerEvent('demo:server', 1)\n");
     let found = diagnostics::diagnostics(&ws, &doc, &Default::default(), &ws.crossrefs());
     assert!(found.iter().any(|d| d.code == Some(NumberOrString::String("fivem/event-wrong-side".into()))));

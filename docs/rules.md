@@ -94,7 +94,7 @@ TypeScript's strict mode does; see [Strict mode](reference.md#strict-mode).
 | `qbox/prefer-cache` | hint | A native lookup has a corresponding ox_lib cache value. |
 | `qbox/legacy-core-object` | hint | Use of the QBCore compatibility core object. |
 | `fivem/event-argument-count` | warning | More event arguments than known handlers accept. |
-| `fivem/event-missing-arguments` | info | Fewer arguments than known handlers declare. |
+| `fivem/event-missing-arguments` | info | Fewer arguments than known handlers require: all their parameters, or, when the doc comment above a registration documents them, those up to the last one it requires, as `missing-parameter` counts them, so a `---@param model? string` may be left out. |
 | `fivem/event-wrong-side` | warning | Known handlers exist only on the other side, or a handler waits for a FiveM event of the other side, such as `playerDropped` in client code. |
 | `fivem/export-argument-count` | warning | More arguments than the known exported function accepts. |
 | `fivem/unknown-export` | info | An analyzed resource does not register the named export. |

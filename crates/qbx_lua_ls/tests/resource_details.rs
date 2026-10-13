@@ -287,6 +287,7 @@ fn bounds_arrays_keeps_full_counts_and_preserves_duplicate_dependent_identities(
             family: EventFamily::Native,
             side: None,
             handler: None,
+            arity: None,
             range,
         });
     }
@@ -361,6 +362,7 @@ fn long_display_strings_are_bounded_after_full_name_resolution() {
         kind: EventKind::NetEvent,
         side: None,
         handler: Some(std::sync::Arc::new(qbx_lua_ls::types::FunType::default())),
+        arity: None,
         range: Range::new(Position::new(0, 0), Position::new(0, 1)),
     });
     index.set_file(

@@ -525,7 +525,8 @@ impl Workspace {
 
         fn arity(fun: &FunType) -> Arity {
             let vararg = fun.params.last().is_some_and(|p| p.name == "...");
-            Arity { params: fun.params.len() - usize::from(vararg), vararg }
+            let params = fun.params.len() - usize::from(vararg);
+            Arity { params, required: params, vararg }
         }
 
         let mut refs = CrossRefs::default();
@@ -545,12 +546,13 @@ impl Workspace {
             }
             for event in file.index.events.iter().filter(|e| matches!(e.kind, EventKind::NetEvent | EventKind::Handler))
             {
-                refs.add_event(event.name.clone(), event.side, event.handler.as_deref().map(arity), resource.clone());
+                let handler = event.arity.or_else(|| event.handler.as_deref().map(arity));
+                refs.add_event(event.name.clone(), event.side, handler, resource.clone());
             }
             if let Some(resource) = resource {
                 for export in &file.index.exports {
                     let known = export.ty.as_fun().map(|f| arity(f));
-                    let arity = known.unwrap_or(Arity { params: 0, vararg: true });
+                    let arity = known.unwrap_or(Arity { params: 0, required: 0, vararg: true });
                     refs.exports.insert((resource.clone(), export.name.clone()), arity);
                 }
             }

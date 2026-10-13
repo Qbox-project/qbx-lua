@@ -1,18 +1,38 @@
 use qbx_fivem_data::Side;
 use qbx_lua_syntax::ast::*;
 use qbx_lua_syntax::visit::{self, Visitor};
-use qbx_lua_syntax::SmolStr;
+use qbx_lua_syntax::{Comment, SmolStr};
 use rustc_hash::{FxHashMap, FxHashSet};
+
+use crate::signature::{documented, Requirement};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Arity {
     pub params: usize,
+    /// How many arguments a call has to pass: all the parameters, or, when the doc comment of the
+    /// function documents them, those up to the last one it requires.
+    pub required: usize,
     pub vararg: bool,
 }
 
 impl Arity {
     pub fn of(func: &FuncBody) -> Self {
-        Self { params: func.params.len(), vararg: func.vararg.is_some() }
+        let params = func.params.len();
+        Self { params, required: params, vararg: func.vararg.is_some() }
+    }
+
+    /// The arity of `func` under the doc comment above `anchor`: a call has to pass the parameters
+    /// up to the last one the comment requires, as `missing-parameter` counts them, so one marked
+    /// optional, as `---@param model? string`, or typed to take `nil` may be left out. Without a
+    /// comment that documents its parameters, it has to pass them all.
+    pub fn documented(source: &str, comments: &[Comment], anchor: u32, func: &FuncBody) -> Self {
+        let arity = Self::of(func);
+        match documented(source, comments, anchor, func, false) {
+            Some(fun) => {
+                Self { required: Requirement::of(&fun, false, &|_| None).arguments.min(arity.params), ..arity }
+            }
+            None => arity,
+        }
     }
 }
 
@@ -45,41 +65,64 @@ impl CrossRefs {
         self.events.entry(name).or_default().push(EventRegistration { side, handler, resource });
     }
 
-    pub fn collect(&mut self, chunk: &Chunk, side: Option<Side>, resource: Option<&str>) {
+    pub fn collect(&mut self, source: &str, chunk: &Chunk, side: Option<Side>, resource: Option<&str>) {
         if let Some(resource) = resource {
             self.resources.insert(SmolStr::new(resource));
         }
         let regions = crate::side_guard::SideRegions::of_chunk(chunk);
-        let mut collector = Collector { refs: self, side, regions, resource, functions: FxHashMap::default() };
+        let mut collector = Collector {
+            refs: self,
+            source,
+            comments: &chunk.comments,
+            side,
+            regions,
+            resource,
+            functions: FxHashMap::default(),
+            anchors: FxHashMap::default(),
+        };
         collector.visit_block(&chunk.block);
     }
 }
 
 struct Collector<'a> {
     refs: &'a mut CrossRefs,
+    source: &'a str,
+    comments: &'a [Comment],
     side: Option<Side>,
     regions: crate::side_guard::SideRegions,
     resource: Option<&'a str>,
     functions: FxHashMap<SmolStr, Arity>,
+    /// Where the statement starts whose value a call is, by where the call starts: the functions
+    /// passed to it take the doc comment above that statement, as the language server reads it.
+    anchors: FxHashMap<u32, u32>,
 }
 
 impl<'ast> Visitor<'ast> for Collector<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        let documented = |func: &FuncBody| Arity::documented(self.source, self.comments, stmt.span.start, func);
         match &stmt.kind {
             StmtKind::LocalFunction { name, func } => {
-                self.functions.insert(name.text.clone(), Arity::of(func));
+                self.functions.insert(name.text.clone(), documented(func));
             }
             StmtKind::Function { name, func } if name.path.is_empty() && name.method.is_none() => {
-                self.functions.insert(name.base.text.clone(), Arity::of(func));
+                self.functions.insert(name.base.text.clone(), documented(func));
             }
             StmtKind::Local { names, exprs, .. } => {
                 for (name, expr) in names.iter().zip(exprs) {
                     if let ExprKind::Function(func) = &expr.kind {
-                        self.functions.insert(name.name.text.clone(), Arity::of(func));
+                        self.functions.insert(name.name.text.clone(), documented(func));
                     }
                 }
             }
             _ => {}
+        }
+        let values = match &stmt.kind {
+            StmtKind::Local { exprs, .. } | StmtKind::Assign { exprs, .. } | StmtKind::Return(exprs) => &exprs[..],
+            StmtKind::Expr(expr) => std::slice::from_ref(expr),
+            _ => &[],
+        };
+        for value in values.iter().filter(|value| value.is_call()) {
+            self.anchors.insert(value.span.start, stmt.span.start);
         }
         visit::walk_stmt(self, stmt);
     }
@@ -90,7 +133,11 @@ impl<'ast> Visitor<'ast> for Collector<'_> {
             let name = args.first().and_then(Expr::as_string);
             match (path.as_deref(), name) {
                 (Some(call), Some(name)) if EVENT_REGISTRATION_CALLS.contains(&call) => {
-                    let handler = args.iter().skip(1).find_map(|arg| self.arity_of(arg));
+                    let anchor = self.anchors.get(&expr.span.start).copied().unwrap_or(expr.span.start);
+                    let handler = args.iter().skip(1).find_map(|arg| match &arg.kind {
+                        ExprKind::Function(func) => Some(Arity::documented(self.source, self.comments, anchor, func)),
+                        _ => self.arity_of(arg),
+                    });
                     let side = self.regions.effective(expr.span.start, self.side);
                     self.refs.add_event(name.clone(), side, handler, self.resource.map(SmolStr::new));
                 }
@@ -98,7 +145,7 @@ impl<'ast> Visitor<'ast> for Collector<'_> {
                     if let (Some(resource), Some(arity)) = (self.resource, args.get(1).and_then(|a| self.arity_of(a))) {
                         self.refs.exports.insert((SmolStr::new(resource), name.clone()), arity);
                     } else if let Some(resource) = self.resource {
-                        let unknown = Arity { params: 0, vararg: true };
+                        let unknown = Arity { params: 0, required: 0, vararg: true };
                         self.refs.exports.insert((SmolStr::new(resource), name.clone()), unknown);
                     }
                 }

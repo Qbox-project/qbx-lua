@@ -135,7 +135,8 @@ impl CrossFile<'_, '_> {
         } else {
             arities.iter().map(|a| a.params).max()
         };
-        let least = arities.iter().map(|a| a.params).min().unwrap_or(0);
+        // A parameter that the doc comment of a handler marks optional may be left out.
+        let least = arities.iter().map(|a| a.required).min().unwrap_or(0);
         if most.is_some_and(|most| passed > most) {
             let most = most.unwrap_or(0);
             self.sink.report(
@@ -151,7 +152,7 @@ impl CrossFile<'_, '_> {
                 rules::EVENT_MISSING_ARGUMENTS,
                 expr.span,
                 format!(
-                    "'{name}' is triggered with {passed} argument{}, but its handler declares {least}; the rest will be nil",
+                    "'{name}' is triggered with {passed} argument{}, but its handler requires {least}; the rest will be nil",
                     plural(passed)
                 ),
             );

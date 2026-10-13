@@ -4,6 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use lsp_types::{Range, Url};
 use qbx_fivem_data::Side;
+use qbx_lua_analysis::crossref::Arity;
 use qbx_lua_analysis::manifest::Manifest;
 use qbx_lua_analysis::project::{split_import, Declaration, Declarations};
 use qbx_lua_analysis::summary::FileSummary;
@@ -328,6 +329,9 @@ pub struct EventDef {
     /// The manifest side narrowed by the guard around this registration or trigger.
     pub side: Option<Side>,
     pub handler: Option<Arc<FunType>>,
+    /// How many arguments the function a native registration passes takes and needs, with the
+    /// parameters that the doc comment above the registration marks optional, as the linter reads it.
+    pub arity: Option<Arity>,
     pub range: Range,
 }
 

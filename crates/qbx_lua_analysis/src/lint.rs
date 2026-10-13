@@ -85,7 +85,7 @@ fn collect_crossrefs(
     match root.and_then(|root| load_resource(root, config, locator)) {
         Some(resource) => {
             for file in &resource.files {
-                refs.collect(&file.chunk, file.side, Some(&resource.name));
+                refs.collect(&file.source, &file.chunk, file.side, Some(&resource.name));
             }
             if resource.env.opaque || resource.manifest.has_non_lua_scripts() {
                 refs.opaque_resources.insert(resource.name.as_str().into());
@@ -93,7 +93,7 @@ fn collect_crossrefs(
         }
         None => {
             for source in files.iter().filter_map(|path| read_source(path).ok()) {
-                refs.collect(&parse(&source), None, None);
+                refs.collect(&source, &parse(&source), None, None);
             }
         }
     }

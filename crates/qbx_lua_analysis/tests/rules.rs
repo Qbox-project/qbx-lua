@@ -22,9 +22,9 @@ fn codes_in_project(
     let resolution = resolve(&chunk);
     let summary = summarize(source, &chunk, &resolution);
     let mut crossrefs = CrossRefs::default();
-    crossrefs.collect(&chunk, side, None);
+    crossrefs.collect(source, &chunk, side, None);
     for (other_side, other) in others {
-        crossrefs.collect(&parse(other), *other_side, Some("other"));
+        crossrefs.collect(other, &parse(other), *other_side, Some("other"));
     }
     let locale = locale.map(|json| LocaleFile::parse("locales/en.json".into(), json.to_string()));
     let input = FileInput {
@@ -54,9 +54,9 @@ fn resource_project(source: &str, side: Side, own: &str, others: &[(&str, Option
     let resolution = resolve(&chunk);
     let summary = summarize(source, &chunk, &resolution);
     let mut crossrefs = CrossRefs::default();
-    crossrefs.collect(&chunk, Some(side), Some(own));
+    crossrefs.collect(source, &chunk, Some(side), Some(own));
     for (resource, other_side, other) in others {
-        crossrefs.collect(&parse(other), *other_side, Some(resource));
+        crossrefs.collect(other, &parse(other), *other_side, Some(resource));
     }
     let env = qbx_lua_analysis::project::ResourceEnv::default();
     let manifest = qbx_lua_analysis::manifest::Manifest::default();
@@ -112,6 +112,28 @@ fn events_are_checked_against_their_handlers() {
         project("TriggerClientEvent('hud:update', -1, 1, 2)", Side::Server, &[client]),
         ["fivem/event-argument-count"]
     );
+
+    // A parameter that the doc comment of the handler marks optional, or types to take `nil`, may be
+    // left out, as `missing-parameter` counts them; without a doc comment every parameter is needed.
+    let documented = (
+        Some(Side::Client),
+        "---@param reset boolean\n---@param model? string\n---@param data table|nil\n\
+         RegisterNetEvent('clothes:load', function(reset, model, data) print(reset, model, data) end)",
+    );
+    assert_eq!(
+        project("TriggerClientEvent('clothes:load', -1, true)", Side::Server, &[documented]),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        project("TriggerClientEvent('clothes:load', -1)", Side::Server, &[documented]),
+        ["fivem/event-missing-arguments"]
+    );
+    let named = (
+        Some(Side::Client),
+        "---@param reset boolean\n---@param model? string\nlocal function load(reset, model) print(reset, model) end\n\
+         RegisterNetEvent('clothes:named', load)",
+    );
+    assert_eq!(project("TriggerClientEvent('clothes:named', -1, true)", Side::Server, &[named]), Vec::<&str>::new());
 }
 
 #[test]

@@ -242,7 +242,7 @@ pub static RULES: &[Rule] = &[
     rule(MANIFEST_UNLISTED_SCRIPT, Manifest, OFF, false, "A Lua file in the resource is not referenced by fxmanifest.lua."),
     rule(MANIFEST_MISSING_DEPENDENCY, Manifest, INFO, false, "Exports of another resource are used but the resource is not listed under dependencies, so load order is not guaranteed."),
     rule(EVENT_ARGUMENT_COUNT, FiveM, WARN, false, "An event is triggered with more arguments than its handler takes; the extra values are lost."),
-    rule(EVENT_MISSING_ARGUMENTS, FiveM, INFO, false, "An event is triggered with fewer arguments than its handler declares; fine for optional parameters, a bug otherwise."),
+    rule(EVENT_MISSING_ARGUMENTS, FiveM, INFO, false, "An event is triggered with fewer arguments than its handler requires; a parameter its doc comment marks optional may be left out."),
     rule(EVENT_WRONG_SIDE, FiveM, WARN, false, "An event is triggered towards a side where nothing handles it, while a handler exists on the other side, or a handler waits for an event that FiveM only triggers on the other side."),
     rule(EXPORT_ARGUMENT_COUNT, FiveM, WARN, false, "An export is called with more arguments than the exported function accepts."),
     rule(UNKNOWN_EXPORT, FiveM, INFO, false, "A resource that is part of the workspace does not register the export that is called."),

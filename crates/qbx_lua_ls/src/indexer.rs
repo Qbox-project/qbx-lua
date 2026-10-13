@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use lsp_types::{Position, Range};
 use qbx_fivem_data::Side;
+use qbx_lua_analysis::crossref::Arity;
 use qbx_lua_analysis::env::is_meta_file;
 use qbx_lua_analysis::scope::{Resolution, Resolved};
 use qbx_lua_analysis::side_guard::SideRegions;
@@ -1051,6 +1052,7 @@ impl<'a> Indexer<'a> {
             family: wrapper.family(),
             side: self.regions.effective(offset, self.side),
             handler,
+            arity: None,
             range: self.range(name_arg.span),
         });
     }
@@ -1080,13 +1082,23 @@ impl<'a> Indexer<'a> {
         };
         let Some(name_arg) = args.first() else { return };
         let Some(name) = name_arg.as_string().filter(|n| !n.is_empty()) else { return };
-        let handler = if framework.is_some() {
-            args.get(1).filter(|_| kind == EventKind::Callback).and_then(|arg| self.handler_type(arg, offset))
+        let (handler, arity) = if framework.is_some() {
+            let handler =
+                args.get(1).filter(|_| kind == EventKind::Callback).and_then(|arg| self.handler_type(arg, offset));
+            (handler, None)
         } else {
-            args.iter().skip(1).find_map(|arg| match &arg.kind {
-                ExprKind::Function(func) => Some(Arc::new(self.infer.fun_type(func, None, false))),
+            let anchor = self.ctx.call_doc_anchor(offset);
+            let found = args.iter().skip(1).find_map(|arg| match &arg.kind {
+                ExprKind::Function(func) => Some((func, Arc::new(self.infer.fun_type(func, None, false)))),
                 _ => None,
-            })
+            });
+            match found {
+                Some((func, handler)) => {
+                    let arity = Arity::documented(self.ctx.source, &self.ctx.chunk.comments, anchor, func);
+                    (Some(handler), Some(arity))
+                }
+                None => (None, None),
+            }
         };
         self.out.events.push(EventDef {
             name: name.clone(),
@@ -1094,6 +1106,7 @@ impl<'a> Indexer<'a> {
             family,
             side,
             handler,
+            arity,
             range: self.range(name_arg.span),
         });
     }
