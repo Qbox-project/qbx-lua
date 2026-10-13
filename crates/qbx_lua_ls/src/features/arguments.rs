@@ -556,7 +556,11 @@ fn mentions(ty: &Type, matches: &impl Fn(&str) -> bool) -> bool {
         Type::Array(inner) | Type::Variadic(inner) => mentions(inner, matches),
         Type::Map(key, value) => mentions(key, matches) || mentions(value, matches),
         Type::Tuple(parts) | Type::Union(parts) => parts.iter().any(|part| mentions(part, matches)),
-        Type::Shape(shape) => shape.fields.iter().any(|field| mentions(&field.ty, matches)),
+        Type::Shape(shape) => {
+            shape.fields.iter().any(|field| mentions(&field.ty, matches))
+                || shape.array.as_ref().is_some_and(|value| mentions(value, matches))
+                || shape.indices.iter().any(|(key, value)| mentions(key, matches) || mentions(value, matches))
+        }
         Type::Fun(fun) => {
             fun.params.iter().any(|param| mentions(&param.ty, matches))
                 || fun.returns.iter().any(|ty| mentions(ty, matches))

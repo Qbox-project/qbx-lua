@@ -3352,6 +3352,13 @@ impl<'a> Infer<'a> {
         if depth > 8 || arg.is_unknown() {
             return;
         }
+        // `{ [K]: V }` binds as `table<K, V>` does.
+        if let Some((key, value)) = keyed_by(param) {
+            let (arg_key, arg_value) = self.key_value_types(arg, false);
+            self.unify(fun, key, &arg_key, returned, bound, depth + 1);
+            self.unify(fun, value, &arg_value, returned, bound, depth + 1);
+            return;
+        }
         let mut bind = |name: &str, ty: Type| {
             if !bound.iter().any(|(n, _)| n == name) {
                 bound.push((SmolStr::new(name), ty));
@@ -3396,11 +3403,6 @@ impl<'a> Infer<'a> {
             }
             Type::Array(inner) => {
                 self.unify(fun, inner, &self.key_value_types(arg, true).1, returned, bound, depth + 1);
-            }
-            Type::Map(key, value) => {
-                let (arg_key, arg_value) = self.key_value_types(arg, false);
-                self.unify(fun, key, &arg_key, returned, bound, depth + 1);
-                self.unify(fun, value, &arg_value, returned, bound, depth + 1);
             }
             Type::Union(types) => {
                 for part in types.iter().filter(|t| !matches!(t, Type::Nil)) {
@@ -3460,7 +3462,9 @@ impl<'a> Infer<'a> {
             Type::Named(_, args) => args.iter().any(|arg| self.can_bind(fun, arg)),
             Type::NameOf(name) => self.is_generic(fun, name),
             Type::Array(inner) => self.can_bind(fun, inner),
-            Type::Map(key, value) => self.can_bind(fun, key) || self.can_bind(fun, value),
+            Type::Map(..) | Type::Shape(_) => {
+                keyed_by(param).is_some_and(|(key, value)| self.can_bind(fun, key) || self.can_bind(fun, value))
+            }
             Type::Union(types) => types.iter().any(|t| self.can_bind(fun, t)),
             Type::Fun(expected) => expected.returns.iter().any(|t| self.can_bind(fun, t)),
             _ => false,
@@ -4639,6 +4643,19 @@ fn is_number_key(key: &Type) -> bool {
 
 fn is_integer_key(key: &Type) -> bool {
     matches!(key.widen(), Type::Integer | Type::Number)
+}
+
+/// The key and value types of `ty` when it is a `table<K, V>`, or a `{ [K]: V }` with no other
+/// entries, which declares the same table.
+fn keyed_by(ty: &Type) -> Option<(&Type, &Type)> {
+    match ty {
+        Type::Map(key, value) => Some((key, value)),
+        Type::Shape(shape) if shape.fields.is_empty() && shape.array.is_none() => match &shape.indices[..] {
+            [(key, value)] => Some((key, value)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Whether a key of type `key` may be the `literal` that a `---@field [1] number` is keyed by:

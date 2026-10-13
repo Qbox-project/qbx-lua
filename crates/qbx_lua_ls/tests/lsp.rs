@@ -10231,6 +10231,56 @@ end
 }
 
 #[test]
+fn brace_tables_bind_generics_as_table_types_do() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@generic K, V
+---@param tbl { [K]: V }
+---@param fun fun(value: V, key: K): boolean
+---@return V?
+local function find(tbl, fun)
+    for key, value in pairs(tbl) do
+        if fun(value, key) then
+            return value
+        end
+    end
+end
+
+---@type { [number]: string }
+local names = { 'a' }
+local found = find(names, function(name, id)
+    return name == 'a' and id == 1
+end)
+local listed = find({ true }, function(flag, position)
+    return flag and position == 1
+end)
+print(found, listed)
+";
+    client.open_with(CLIENT, text);
+    let cases = [
+        ("found", "found: string?"),
+        ("name, id", "name: string"),
+        ("id)", "id: number"),
+        ("listed", "listed: boolean?"),
+        ("position)", "position: integer"),
+    ];
+    for (needle, expected) in cases {
+        let (l, c) = pos(text, needle, 0);
+        let hover = client.hover_text(CLIENT, l, c);
+        assert!(hover.contains(expected), "{needle}: expected {expected:?} in {hover}");
+    }
+    client.notify(
+        "workspace/didChangeConfiguration",
+        json!({ "settings": { "qbxLua": { "diagnostics": { "rules": { "no-unknown": "warning" } } } } }),
+    );
+    assert_eq!(
+        findings(&mut client, CLIENT, &["no-unknown", "param-type-mismatch"]),
+        Vec::<(String, u64, String)>::new(),
+        "`{{ [K]: V }}` binds its generics as `table<K, V>` does"
+    );
+}
+
+#[test]
 fn hover_types_the_parameters_of_functions_in_tables() {
     let mut client = Client::start(fixture_root());
     let text = "\
