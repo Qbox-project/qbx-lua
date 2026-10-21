@@ -711,16 +711,19 @@ fn parse_field(rest: &str, line: usize, group: &mut DocGroup) -> bool {
         let mut parser = TypeParser::new(index);
         let key = in_class(class, parser.parse());
         let after = parser.rest().trim_start().strip_prefix(']').unwrap_or(parser.rest());
+        let (optional, after) = after.trim_start().strip_prefix('?').map_or((false, after), |after| (true, after));
         let value = in_class(class, TypeParser::new(after).parse());
+        let entry = |value: Type| if optional { value.optional() } else { value };
         match key {
             Type::StringLit(name) => {
-                class.fields.push(DocField { name, ty: value, line, side, visibility, ..DocField::default() });
+                let field = DocField { name, ty: value, optional, line, side, visibility, ..DocField::default() };
+                class.fields.push(field);
                 return true;
             }
             key @ (Type::IntLit(_) | Type::BooleanLit(_)) => {
-                class.literal_fields.push(DocIndexField { key, ty: value, side, line });
+                class.literal_fields.push(DocIndexField { key, ty: entry(value), side, line });
             }
-            key => class.indices.push(DocIndexField { key, ty: value, side, line }),
+            key => class.indices.push(DocIndexField { key, ty: entry(value), side, line }),
         }
         return false;
     }
@@ -1242,6 +1245,19 @@ mod tests {
         assert!(class.fields.is_empty());
         let index = class.indices.last().expect("`[integer]` is a general index");
         assert_eq!(format!("[{}] {}", index.key, index.ty), "[integer] any");
+    }
+
+    #[test]
+    fn bracketed_fields_marked_optional() {
+        let doc = parse(
+            "---@class Cache\n---@field [string]? integer\n---@field [1] ? string\n---@field [\"my-key\"]? boolean",
+        );
+        let class = &doc.classes[0];
+        let entry = |field: &DocIndexField| format!("[{}] {}", field.key, field.ty);
+        assert_eq!(class.indices.iter().map(entry).collect::<Vec<_>>(), ["[string] integer?"]);
+        assert_eq!(class.literal_fields.iter().map(entry).collect::<Vec<_>>(), ["[1] string?"]);
+        let field = &class.fields[0];
+        assert_eq!((field.name.as_str(), field.ty.to_string(), field.optional), ("my-key", "boolean".into(), true));
     }
 
     #[test]
