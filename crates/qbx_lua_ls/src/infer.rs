@@ -875,7 +875,7 @@ impl<'a> Infer<'a> {
     fn name(&self, name: &Name) -> Type {
         match self.ctx.resolution.resolve_at(name.span.start) {
             Some(Resolved::Local(id)) => self.local_type_at(id, name.span.start),
-            _ => self.global_type(&name.text),
+            _ => self.global_type_at(&name.text, Some(name.span.start)),
         }
     }
 
@@ -1361,6 +1361,12 @@ impl<'a> Infer<'a> {
     }
 
     pub fn global_type(&self, name: &str) -> Type {
+        self.global_type_at(name, None)
+    }
+
+    /// The type of the global `name` read at `at`, where a native takes the signature of the side
+    /// that a guard narrows the code to.
+    pub fn global_type_at(&self, name: &str, at: Option<u32>) -> Type {
         if name == "exports" {
             return Type::Exports(None);
         }
@@ -1389,7 +1395,8 @@ impl<'a> Infer<'a> {
         }
         match native(name) {
             Some(native) => {
-                let fun = Arc::new(native_fun_type(&native.on(self.side)));
+                let side = at.map_or(self.side, |at| self.side_at(at));
+                let fun = Arc::new(native_fun_type(&native.on(side)));
                 Type::Fun(with_signatures(&fun, self.index.global_extensions(name, self.ctx.file)))
             }
             None => Type::Unknown,

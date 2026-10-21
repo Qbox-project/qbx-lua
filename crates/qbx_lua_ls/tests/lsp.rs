@@ -573,6 +573,32 @@ fn server_code_calls_the_server_native_of_a_shared_name() {
 }
 
 #[test]
+fn shared_code_guarded_to_a_side_calls_the_native_of_that_side() {
+    const SHARED: &str = "myresource/shared/config.lua";
+    let mut client = Client::start(fixture_root());
+    let text = "\
+if IsDuplicityVersion() then
+    local vehicles = GetAllVehicles()
+    print(vehicles)
+else
+    local count = GetAllVehicles()
+    print(count)
+end
+local unguarded = GetAllVehicles()
+print(unguarded)
+";
+    client.open_with(SHARED, text);
+    for expected in ["vehicles: Vehicle[]", "count: integer", "unguarded: integer"] {
+        let (l, c) = pos(text, &format!("local {}", &expected[..expected.find(':').unwrap()]), 6);
+        let hover = client.hover_text(SHARED, l, c);
+        assert!(hover.contains(expected), "expected {expected:?} in {hover}");
+    }
+    let (l, c) = pos(text, "GetAllVehicles", 0);
+    let hover = client.hover_text(SHARED, l, c);
+    assert!(hover.contains("function GetAllVehicles(): Vehicle[]"), "{hover}");
+}
+
+#[test]
 fn natives_that_return_tables_type_what_the_tables_hold() {
     let mut client = Client::start(fixture_root());
     let text = "\

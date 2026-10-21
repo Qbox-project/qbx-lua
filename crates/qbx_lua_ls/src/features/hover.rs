@@ -627,14 +627,15 @@ fn global_hover(
     infer: &Infer,
     detail: &mut Detail,
     name: &str,
+    at: u32,
     called: Option<Type>,
 ) -> Option<String> {
     let symbols = ws.index.globals_named(name, infer.ctx.file);
     let Some((file, symbol)) = infer.preferred_global(&symbols) else {
-        if let Some(hover) = native_hover(name, infer.side()) {
+        if let Some(hover) = native_hover(name, infer.side_at(at)) {
             return Some(hover);
         }
-        let ty = infer.global_type(name);
+        let ty = infer.global_type_at(name, Some(at));
         return (!ty.is_unknown()).then(|| lua_block(&describe_value(infer, detail, "(global) ", name, &ty, None)));
     };
     // Going through `global_type` merges the table with members other files of the resource add.
@@ -1024,7 +1025,7 @@ pub fn hover(ws: &Workspace, doc: &Document, position: Position, level: u32) -> 
         let detail = &mut detail;
         let text = match &target {
             Target::Local(id, span) => Some(local_hover(infer, detail, *id, span.start, called)),
-            Target::Global(name, _) => global_hover(ws, infer, detail, name, called),
+            Target::Global(name, span) => global_hover(ws, infer, detail, name, span.start, called),
             Target::Member { info, owner, .. } => match called {
                 Some(ty) => Some(member_hover(infer, detail, &MemberInfo { ty, ..info.clone() }, owner)),
                 None => Some(member_hover(infer, detail, info, owner)),
