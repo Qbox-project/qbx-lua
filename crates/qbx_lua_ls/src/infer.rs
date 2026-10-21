@@ -4348,17 +4348,53 @@ fn holds_exports(ty: &Type) -> bool {
 
 /// Adds `next` and its overloads to the signatures of `fun`, as a method that a definition file
 /// declares twice, like `Search` of `ox_inventory` for `'count'` and for `'slots'`, has both. One
-/// that takes the same parameters on the same side as a signature `fun` has adds no call it takes.
+/// that takes the same parameters on the same side as a signature `fun` has adds no call it takes,
+/// only the values it returns when that signature returns nothing.
 fn add_signature(fun: &mut Arc<FunType>, next: &Arc<FunType>) {
     for signature in std::iter::once(next).chain(&next.overloads) {
         let same = |known: &FunType| {
             known.params == signature.params && known.side == signature.side && known.is_method == signature.is_method
         };
-        if same(fun) || fun.overloads.iter().any(|known| same(known)) {
+        if same(fun) {
+            take_returns(fun, signature);
+            continue;
+        }
+        if let Some(i) = fun.overloads.iter().position(|known| same(known)) {
+            take_returns(&mut Arc::make_mut(fun).overloads[i], signature);
             continue;
         }
         Arc::make_mut(fun).overloads.push(Arc::new(FunType { overloads: Vec::new(), ..(**signature).clone() }));
     }
+}
+
+/// Gives `known`, which returns nothing, what `other` returns when it returns values: a call may run
+/// either, as a stub that a bridge defines again for the framework it finds. Inferred values then
+/// hold the `nil` of the stub too, as those of a body that may run past its end do.
+fn take_returns(known: &mut Arc<FunType>, other: &FunType) {
+    if !known.returns_nothing || other.returns_nothing || other.returns.is_empty() {
+        return;
+    }
+    let known = Arc::make_mut(known);
+    known.returns_nothing = false;
+    known.returns_inferred = other.returns_inferred;
+    known.return_values = other.return_values.clone();
+    if !other.returns_inferred {
+        known.returns = other.returns.clone();
+        known.return_sets = other.return_sets.clone();
+        known.explicit_returns = other.explicit_returns.clone();
+        return;
+    }
+    known.returns = other.returns.iter().map(|ty| ty.clone().optional()).collect();
+    known.explicit_returns = Some(other.explicit_returns.clone().unwrap_or_else(|| other.returns.clone()));
+    let mut sets = match other.return_sets.is_empty() {
+        true => vec![other.returns.clone()],
+        false => other.return_sets.clone(),
+    };
+    if !sets.contains(&Vec::new()) {
+        sets.push(Vec::new());
+    }
+    let linked = known.returns.len() > 1 && (2..=MAX_RETURN_SETS).contains(&sets.len());
+    known.return_sets = if linked { sets } else { Vec::new() };
 }
 
 /// `fun` with the signatures of each of `more` added, as `add_signature` adds them.

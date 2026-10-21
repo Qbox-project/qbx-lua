@@ -5667,6 +5667,45 @@ return cleanup, reset, arm, fire
 }
 
 #[test]
+fn stubs_that_return_nothing_take_the_values_of_their_other_definitions() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+local Bridge = {}
+function Bridge.getPlayer(src) end
+if GetResourceState('qbx_core') == 'started' then
+    function Bridge.getPlayer(src)
+        return { name = 'x', src = src }
+    end
+end
+function Bridge.notify(msg) end
+function Bridge.notify(msg) print(msg) end
+local player = Bridge.getPlayer(1)
+print(player.name, Bridge.notify('a').field)
+";
+    client.open_with(CLIENT, text);
+    let (l, c) = pos(text, "player = Bridge", 0);
+    let hover = client.hover_text(CLIENT, l, c);
+    assert!(hover.contains("local player: {"), "the values the other definition returns: {hover}");
+    let line = pos(text, "Bridge.notify('a')", 0).0 as u64;
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field", "need-check-nil"]),
+        [("undefined-field".to_string(), line, "Field `field` is not declared in `nil`".to_string())],
+        "a call may run any definition of a function, so a stub that returns nothing gives nil only \
+         when the others return nothing either"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["need-check-nil"]),
+        [(
+            "need-check-nil".to_string(),
+            line,
+            "`player` may be nil: its type here is `{ name: string, src: unknown }?`".to_string()
+        )],
+        "strict reads the nil of the stub, as that of a body that may run past its end"
+    );
+}
+
+#[test]
 fn private_protected_and_package_members_stay_in_their_class_or_file() {
     let mut client = Client::start(fixture_root());
     const SHARED: &str = "myresource/shared/config.lua";

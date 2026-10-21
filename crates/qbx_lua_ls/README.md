@@ -149,7 +149,8 @@ the other side declares is reported as `undefined-doc-name`.
 
 A function takes the signatures of every definition of it that the code sees, as in LuaLS, so a
 `---@meta` file that declares a function again with more `@overload`s adds them to those of the
-code. A signature that takes the same parameters as one the function has is not listed twice.
+code. A signature that takes the same parameters as one the function has is not listed twice,
+but a definition that returns nothing, like a bridge's stub, returns what the other one does.
 
 An `---@extend` line adds a signature to a function from any file, without declaring it again,
 the way a library's users or its other modules type the actions, events or callbacks they add:
