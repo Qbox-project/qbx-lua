@@ -3,8 +3,8 @@
 ---@class CitizenLib
 Citizen = {}
 
----Suspends the current scheduler thread for at least `msec` milliseconds; 0 resumes on the next tick. Only valid inside a thread created by the scheduler.
----@param msec integer
+---Suspends the current scheduler thread for at least `msec` milliseconds; 0 or none resumes on the next tick. Only valid inside a thread created by the scheduler.
+---@param msec? integer
 function Citizen.Wait(msec) end
 
 ---Queues `handler` as a new scheduler thread (coroutine) that starts on the next tick, and returns an id that `Citizen.ClearTimeout` cancels it with before it starts.
@@ -148,7 +148,7 @@ function Citizen.SetTickRoutine(routine) end
 function Citizen.SetEventRoutine(routine) end
 
 ---Alias of `Citizen.Wait`.
----@param msec integer
+---@param msec? integer
 function Wait(msec) end
 
 ---Alias of `Citizen.CreateThread`.

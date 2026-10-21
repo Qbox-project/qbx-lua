@@ -13466,6 +13466,16 @@ fn runtime_stubs_follow_the_cfxlua_runtime() {
 }
 
 #[test]
+fn wait_takes_no_delay_as_the_runtime_does() {
+    let mut client = Client::start(fixture_root());
+    client.open_with(CLIENT, "CreateThread(function()\n    Wait()\n    Citizen.Wait()\nend)");
+    for (line, character) in [(1, 5), (2, 13)] {
+        let hover = client.hover_text(CLIENT, line, character);
+        assert!(hover.contains("msec?: integer"), "{hover}");
+    }
+}
+
+#[test]
 fn event_completion_replaces_the_whole_name_across_colons() {
     for snippets in [false, true] {
         let mut client = Client::start_with_capabilities(
