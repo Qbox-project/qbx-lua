@@ -8601,6 +8601,44 @@ print(show)
 }
 
 #[test]
+fn generics_bound_by_unannotated_tables_give_values_with_any_field_unless_strict() {
+    let mut client = Client::start(fixture_root());
+    let text = "Entities = { [1] = { pos = 1, heading = 45 } }
+local function give(id, hash)
+    local entity = assert(Entities[id])
+    entity.weapon = hash
+    return assert(Entities[id]).weapon
+end
+
+---@type { label: string }[]
+local rows = {}
+local row = assert(rows[1])
+row.count = 1
+print(give, row)
+";
+    client.open_with(CLIENT, text);
+    let line = |needle: &str| pos(text, needle, 0).0 as u64;
+    let finding = |code: &str, at: &str, message: &str| (code.to_string(), line(at), message.to_string());
+    let codes = ["inject-field", "undefined-field"];
+    let relaxed = findings(&mut client, CLIENT, &codes);
+    assert_eq!(
+        relaxed,
+        [finding("inject-field", "row.count", "Field `count` is not declared in `{ label: string }`")],
+        "as in lua-language-server, what `assert` gives for a table no annotation types takes any field"
+    );
+    client.set_strict(true);
+    let shape = "Field `weapon` is not declared in `{ pos: integer, heading: integer }`";
+    assert_eq!(
+        added(&relaxed, &findings(&mut client, CLIENT, &codes)),
+        [
+            finding("inject-field", "entity.weapon", shape),
+            finding("undefined-field", "assert(Entities[id]).weapon", shape)
+        ],
+        "with `strict`, as in TypeScript, it has the fields its constructor sets"
+    );
+}
+
+#[test]
 fn nil_that_an_export_returns_counts_with_strict() {
     struct Fixture(PathBuf);
     impl Drop for Fixture {

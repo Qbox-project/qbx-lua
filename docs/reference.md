@@ -653,8 +653,9 @@ leaves them out of a class too.
 through a value whose type does not have them: a class, or a table type that an annotation
 declares, such as `---@type { label: string }`, as lua-language-server and TypeScript do. As in
 lua-language-server, a table whose type no annotation declares takes any field: one a table
-constructor builds, what a function without `@return` returns, a loop variable over such tables,
-and a global or local table read through another name, as `local cfg = Config`. With
+constructor builds, what a function without `@return` returns, what a generic gives for one, as
+`assert(Entities[id])`, a loop variable over such tables, and a global or local table read through
+another name, as `local cfg = Config`. With
 [`strict`](#strict-mode), as in TypeScript, a table that a constructor with fields builds has those
 alone, at the top of the file as inside a function, so what code sets through its local later is
 reported, while an empty table such as `local result = {}` still takes any field. To turn it off:

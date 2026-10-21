@@ -535,10 +535,12 @@ impl<'a, 'b> Declared<'a, 'b> {
     }
 
     /// What `call` returns when its function declares it. A native documented as `boolean` can
-    /// give scripts `1` instead of `true`, so code compares its result with either.
+    /// give scripts `1` instead of `true`, so code compares its result with either. With
+    /// `annotations_only`, the declared types of the arguments bind the generics of a generic, so
+    /// `assert(Entities[id])` declares nothing for a table no annotation types.
     fn returned(&self, call: &Expr) -> Option<Vec<Type>> {
         let declared = match self.annotations_only {
-            true => self.infer.annotated_returns(call),
+            true => self.generic_returns(call).or_else(|| self.infer.annotated_returns(call)),
             false => self.infer.declared_returns(call),
         };
         let values = declared
