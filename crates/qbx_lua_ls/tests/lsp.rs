@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::thread::JoinHandle;
@@ -15,6 +16,9 @@ struct Client {
     registrations: Vec<Value>,
     logs: Vec<String>,
     root: PathBuf,
+    open: RefCell<HashMap<String, i64>>,
+    /// The version the diagnostics of an open document are still awaited for, `None` for any.
+    unpublished: RefCell<HashMap<String, Option<i64>>>,
 }
 
 fn fixture_root() -> PathBuf {
@@ -54,6 +58,8 @@ impl Client {
             registrations: Vec::new(),
             logs: Vec::new(),
             root,
+            open: RefCell::default(),
+            unpublished: RefCell::default(),
         };
         let root_uri = Url::from_file_path(&client.root).unwrap();
         let result = client.request(
@@ -66,7 +72,35 @@ impl Client {
     }
 
     fn notify(&self, method: &str, params: Value) {
+        self.expect_publish(method, &params);
         self.connection.sender.send(Message::Notification(Notification { method: method.into(), params })).unwrap();
+    }
+
+    /// The server publishes the diagnostics of every open document again once it takes in a change.
+    fn expect_publish(&self, method: &str, params: &Value) {
+        let document = &params["textDocument"];
+        let uri = document["uri"].as_str().map(str::to_string);
+        let mut open = self.open.borrow_mut();
+        let mut unpublished = self.unpublished.borrow_mut();
+        match (method, uri) {
+            ("textDocument/didOpen" | "textDocument/didChange", Some(uri))
+                if method == "textDocument/didOpen" || open.contains_key(&uri) =>
+            {
+                let version = document["version"].as_i64().unwrap_or_default();
+                open.insert(uri.clone(), version);
+                unpublished.insert(uri, Some(version));
+            }
+            ("textDocument/didClose", Some(uri)) => {
+                open.remove(&uri);
+                unpublished.remove(&uri);
+                return;
+            }
+            ("textDocument/didSave" | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles", _) => {}
+            _ => return,
+        }
+        for uri in open.keys() {
+            unpublished.entry(uri.clone()).or_insert(None);
+        }
     }
 
     fn handle_incoming(&mut self, message: Message) -> Option<(RequestId, Value)> {
@@ -77,6 +111,10 @@ impl Client {
             }
             Message::Notification(n) if n.method == "textDocument/publishDiagnostics" => {
                 let uri = n.params["uri"].as_str().unwrap().to_string();
+                let unpublished = self.unpublished.get_mut();
+                if unpublished.get(&uri).is_some_and(|version| version.is_none_or(|v| n.params["version"] == v)) {
+                    unpublished.remove(&uri);
+                }
                 self.diagnostics.insert(uri, n.params["diagnostics"].clone());
             }
             Message::Notification(n) if n.method == "window/logMessage" => {
@@ -165,13 +203,18 @@ impl Client {
         );
     }
 
-    /// Diagnostics are published once the server is idle, so round-trip a request first.
+    /// Diagnostics are published once the server is idle, so round-trip a request first. Those of an
+    /// open document are awaited, since checking it may outlast the quiet spell that ends the wait.
     fn diagnostics_for(&mut self, relative: &str) -> Vec<(String, u64)> {
         self.request("qbx/status", Value::Null);
+        let uri = self.uri(relative).to_string();
+        while self.unpublished.get_mut().contains_key(&uri) {
+            let message = self.connection.receiver.recv_timeout(Duration::from_secs(20));
+            self.handle_incoming(message.unwrap_or_else(|_| panic!("no diagnostics were published for {uri}")));
+        }
         while let Ok(message) = self.connection.receiver.recv_timeout(Duration::from_millis(300)) {
             self.handle_incoming(message);
         }
-        let uri = self.uri(relative).to_string();
         let list = self.diagnostics.get(&uri).cloned().unwrap_or(json!([]));
         list.as_array()
             .unwrap()
