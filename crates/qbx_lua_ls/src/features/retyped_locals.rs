@@ -1,27 +1,27 @@
-//! `cast-local-type`: an assignment that gives a local a value its type does not take, where nothing
-//! annotates that type, as `speed = "5"` after `local speed = 5`. As in lua-language-server and
-//! TypeScript, such a local has the type of the value it is declared with. A literal written out
-//! stands for its kind, so `local mode = 'dev'` takes any string and `local count = 0` any number,
-//! while the literals that a function declares it returns, as the `'a'|'b'` of `getMode()`, are the
-//! only ones it takes. A local copied from a value that guards narrow takes the literals its
-//! declared type lists of the kinds they leave, as lua-language-server narrows a value by its kind
-//! alone, so `local mode = state` after `if state ~= 'idle' then return end` takes `'busy'` too. A
-//! loop variable has the type its loop gives it. A local declared without a value, or as `nil`,
-//! `unknown` or `any`, takes any value.
+//! `cast-local-type`: an assignment that gives a local a value its type does not take, as
+//! `speed = "5"` after `local speed = 5`. A local typed with `---@type` or `@param` has that type, as
+//! lua-language-server checks it here too. As in lua-language-server and TypeScript, any other local
+//! has the type of the value it is declared with. A literal written out stands for its kind, so
+//! `local mode = 'dev'` takes any string and `local count = 0` any number, while the literals that a
+//! function declares it returns, as the `'a'|'b'` of `getMode()`, are the only ones it takes. A local
+//! copied from a value that guards narrow takes the literals its declared type lists of the kinds
+//! they leave, as lua-language-server narrows a value by its kind alone, so `local mode = state`
+//! after `if state ~= 'idle' then return end` takes `'busy'` too. A loop variable has the type its
+//! loop gives it. A local declared without a value, or as `nil`, `unknown` or `any`, takes any value.
 //!
 //! The check is that of `assign-type-mismatch`, for each type the value may be: a different kind of
 //! value, or a literal the type does not list, so `nil`, or a `string?`, needs a local that may be
 //! `nil`. A native returns a `BOOL` as a boolean or an integer, so either passes for the other where
-//! a native gives it. Locals typed with `---@type` or `@param` are left to `assign-type-mismatch`,
-//! `<const>` and `<close>` ones to `const-reassign`.
+//! a native gives it. `<const>` and `<close>` locals are left to `const-reassign`.
 //!
-//! As in lua-language-server, a local declared with a table constructor may be cleared with `nil`,
-//! and the `nil` and `false` of a value read from a field or a key are left out. So is a `nil` that
-//! no annotation or stub declares: lua-language-server leaves out the one a function without
-//! `@return` gives, as `nextFreePoint()` does by running past its end when it finds none, also where
-//! a local passes it on. Parameters are not checked. With `strict`, as in TypeScript, all of
-//! those count, a local copied from a guarded value has the type the guards leave, and a parameter
-//! has the type of the function type its function is passed or written as.
+//! As in lua-language-server, a local declared with a table constructor and no `---@type` may be
+//! cleared with `nil`, and the `nil` and `false` of a value read from a field or a key are left out.
+//! So is a `nil` that no annotation or stub declares: lua-language-server leaves out the one a
+//! function without `@return` gives, as `nextFreePoint()` does by running past its end when it finds
+//! none, also where a local passes it on. Parameters without `@param` are not checked. With
+//! `strict`, as in TypeScript, all of those count, a local copied from a guarded value has the type
+//! the guards leave, and a parameter has the type of the function type its function is passed or
+//! written as.
 
 use qbx_lua_analysis::scope::{LocalId, Resolved};
 use qbx_lua_syntax::ast::*;
@@ -56,14 +56,14 @@ struct Finder<'a, 'b> {
     classes: Classes<'a, 'b>,
     declared: Declared<'a, 'b>,
     /// The type of each local assigned so far, and whether a native gives it, or `None` for one
-    /// that takes any value or whose annotation `assign-type-mismatch` checks.
+    /// that takes any value.
     types: FxHashMap<LocalId, Option<(Type, bool)>>,
     out: Vec<(Span, String)>,
 }
 
 impl Finder<'_, '_> {
     /// The type of the values the local `id` takes, and whether a native gives it, or `None` when
-    /// it takes any value or an annotation declares its type.
+    /// it takes any value.
     fn local_type(&mut self, id: LocalId) -> Option<(Type, bool)> {
         if let Some(ty) = self.types.get(&id) {
             return ty.clone();
@@ -76,8 +76,8 @@ impl Finder<'_, '_> {
         ty
     }
 
-    /// The type that the declaration of the local `id` gives it, unless an annotation declares it,
-    /// and whether a native gives it.
+    /// The type that the declaration of the local `id`, or its annotation, gives it, and whether a
+    /// native gives it.
     fn declaration(&self, id: LocalId) -> Option<(Type, bool)> {
         let ctx = self.infer.ctx;
         let local = ctx.resolution.local(id);
@@ -90,23 +90,26 @@ impl Finder<'_, '_> {
             Decl::LocalFunction { .. } | Decl::NumericFor | Decl::GenericFor { .. } => {
                 self.infer.origin_type(id, DECLARATION)?.widen()
             }
+            Decl::Param { .. } if has_param_line(self.infer, local) => self.infer.local_type(id),
             Decl::Param { .. } | Decl::SelfParam { .. } if !self.infer.strict() => return None,
             // What the callee declares, rather than what the calls that reach the function pass.
             Decl::Param { expected: Some(Expected::Arg { .. }), .. } => {
                 self.infer.declared_callback_param(id, |arg| self.declared.of(arg))?
             }
-            Decl::Param { expected: Some(_), .. } if !has_param_line(self.infer, local) => self.infer.local_type(id),
+            Decl::Param { expected: Some(_), .. } => self.infer.local_type(id),
             Decl::Param { .. } | Decl::SelfParam { .. } => return None,
         };
         Some((ty, false))
     }
 
-    /// The type of the value that the `local` statement `stmt` gives the name at `index`, with the
-    /// literals written out widened to their kind, and whether a native gives it.
+    /// The type that the `---@type` above the `local` statement `stmt` gives the name at `index`, or
+    /// that of the value the statement gives it, with the literals written out widened to their
+    /// kind, and whether a native gives it.
     fn local_value(&self, id: LocalId, stmt: &Stmt, index: usize) -> Option<(Type, bool)> {
         let StmtKind::Local { exprs, .. } = &stmt.kind else { return None };
-        if self.infer.ctx.doc_at(stmt.span.start).type_at(index).is_some() {
-            return None;
+        let doc = self.infer.ctx.doc_at(stmt.span.start);
+        if let Some(annotated) = doc.type_at(index) {
+            return doc.declared_class().is_none().then(|| (annotated.clone(), false));
         }
         let native = self.is_native_value(exprs, index);
         let ty = self.infer.origin_type(id, DECLARATION)?;
@@ -190,12 +193,14 @@ impl Finder<'_, '_> {
         self.out.push((span, format!("Cannot assign `{shown}` to `{}`, defined as `{expected}`", name.text)));
     }
 
-    /// Whether a table constructor gives the local `id` the value it is declared with.
+    /// Whether a table constructor gives the local `id` the value it is declared with, and no
+    /// `---@type` its type.
     fn declared_with_table(&self, id: LocalId) -> bool {
         let ctx = self.infer.ctx;
         let Some(Decl::Local { stmt, index }) = ctx.decl(ctx.resolution.local(id).decl.start) else { return false };
         let StmtKind::Local { exprs, .. } = &stmt.kind else { return false };
-        exprs.get(*index).is_some_and(|value| matches!(value.unparen().kind, ExprKind::Table(_)))
+        ctx.doc_at(stmt.span.start).type_at(*index).is_none()
+            && exprs.get(*index).is_some_and(|value| matches!(value.unparen().kind, ExprKind::Table(_)))
     }
 
     /// The type of `given`, value `index` of those that `exprs` store, as the check reads it.

@@ -5079,7 +5079,9 @@ print(secret, shaped, declared, handlers)
         .as_array()
         .unwrap()
         .iter()
-        .filter(|d| d["code"] == "missing-fields" || d["code"] == "assign-type-mismatch")
+        .filter(|d| {
+            ["missing-fields", "assign-type-mismatch", "cast-local-type"].contains(&d["code"].as_str().unwrap())
+        })
         .map(|d| (d["range"]["start"]["line"].as_u64().unwrap(), d["message"].as_str().unwrap().into()))
         .collect();
     found.sort();
@@ -5089,7 +5091,7 @@ print(secret, shaped, declared, handlers)
         [
             (line("local secret"), "Cannot assign `string` to field `shown` of type `integer`".into()),
             (line("local secret"), "Missing required fields in type `Test.Secret`: `hidden`".into()),
-            (line("secret = 5"), "Cannot assign `integer` to `secret` of type `Test.Secret`".into()),
+            (line("secret = 5"), "Cannot assign `integer` to `secret`, defined as `Test.Secret`".into()),
             (line("TestGlobalSecret = {}"), "Missing required fields in type `Test.GlobalSecret`: `shown`".into()),
         ]
     );
@@ -7900,6 +7902,37 @@ print(shape, box, open, nested, list, map, pair, mode, either, make, later, infe
 }
 
 #[test]
+fn reassigned_typed_locals_are_silenced_as_lua_language_server_reports_them() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@param value number|string
+local function f(value)
+    ---@diagnostic disable-next-line: cast-local-type
+    if type(value) == 'string' then value = tonumber(value) end
+    return value
+end
+
+---@type string
+local name = 'a'
+---@diagnostic disable-next-line: cast-local-type
+name = 5
+
+---@type integer
+local count = 0
+count = tonumber('5')
+print(f, name, count)
+";
+    client.open_with(CLIENT, text);
+    let line = pos(text, "count = tonumber", 0).0 as u64;
+    assert_eq!(
+        findings(&mut client, CLIENT, &["assign-type-mismatch", "cast-local-type"]),
+        [("cast-local-type".to_string(), line, "Cannot assign `number?` to `count`, defined as `integer`".to_string())],
+        "lua-language-server reports a later assignment to a `---@type` local or a `@param` parameter as \
+         `cast-local-type`, so its suppressions silence it"
+    );
+}
+
+#[test]
 fn values_assigned_to_typed_variables_are_checked() {
     let mut client = Client::start(fixture_root());
     let text = "\
@@ -7972,35 +8005,44 @@ local plain = 1
 plain = 'text'
 ";
     client.open_with(CLIENT, text);
-    let finding = |needle: &str, message: &str| {
-        ("assign-type-mismatch".to_string(), pos(text, needle, 0).0 as u64, message.to_string())
+    let (local, mismatch) = ("cast-local-type", "assign-type-mismatch");
+    let finding = |code: &str, needle: &str, message: &str| {
+        (code.to_string(), pos(text, needle, 0).0 as u64, message.to_string())
     };
     assert_eq!(
-        findings(&mut client, CLIENT, &["assign-type-mismatch"]),
+        findings(&mut client, CLIENT, &[mismatch]),
         [
-            finding("local state", "Cannot assign `\"test\"` to `state` of type `Test.State`"),
-            finding("state = 'abc'", "Cannot assign `\"abc\"` to `state` of type `Test.State`"),
-            finding("state = 4", "Cannot assign `4` to `state` of type `Test.State`"),
-            finding("state = nil", "Cannot assign `nil` to `state` of type `Test.State`"),
-            finding("maybe = {}", "Cannot assign `table` to `maybe` of type `Test.State?`"),
+            finding(mismatch, "local state", "Cannot assign `\"test\"` to `state` of type `Test.State`"),
+            finding(mismatch, "local letter", "Cannot assign `\"c\"` to `letter` of type `\"a\"|\"b\"`"),
+            // The `@field` decides what a class field takes, and reports it once.
+            finding(mismatch, "holder.name = true", "Cannot assign `boolean` to field `name` of type `string`"),
+            finding(mismatch, "holder.label = 5", "Cannot assign `integer` to `holder.label` of type `string`"),
+            finding(mismatch, "TestLabel = false", "Cannot assign `boolean` to `TestLabel` of type `string`"),
+        ],
+        "values the type takes, a local without a value and the table a `---@class` declares pass"
+    );
+    assert_eq!(
+        findings(&mut client, CLIENT, &[local]),
+        [
+            finding(local, "state = 'abc'", "Cannot assign `\"abc\"` to `state`, defined as `Test.State`"),
+            finding(local, "state = 4", "Cannot assign `4` to `state`, defined as `Test.State`"),
+            finding(local, "state = nil", "Cannot assign `nil` to `state`, defined as `Test.State`"),
+            finding(local, "maybe = {}", "Cannot assign `table` to `maybe`, defined as `Test.State?`"),
             // The statement whose `---@type` declares a name may give it `nil`, as in LuaLS.
-            finding("then handle = nil", "Cannot assign `nil` to `handle` of type `number`"),
-            finding("local letter", "Cannot assign `\"c\"` to `letter` of type `\"a\"|\"b\"`"),
+            finding(local, "then handle = nil", "Cannot assign `nil` to `handle`, defined as `number`"),
             // A local that is assigned again has the type of what may reach it: what `state = nil`
             // gives is still a `Test.State`, as that is reported.
-            finding("letter = state", "Cannot assign `Test.State` to `letter` of type `\"a\"|\"b\"`"),
-            // The `@field` decides what a class field takes, and reports it once.
-            finding("holder.name = true", "Cannot assign `boolean` to field `name` of type `string`"),
-            finding("holder.label = 5", "Cannot assign `integer` to `holder.label` of type `string`"),
-            finding("TestLabel = false", "Cannot assign `boolean` to `TestLabel` of type `string`"),
+            finding(local, "letter = state", "Cannot assign `Test.State` to `letter`, defined as `\"a\"|\"b\"`"),
             // A list of types gives each name its own, and the names after it none, as one type
             // gives every name after the first.
-            finding("name, count, extra = 1", "Cannot assign `integer` to `name` of type `string`"),
-            finding("name, count, extra = 1", "Cannot assign `string` to `count` of type `integer?`"),
-            finding("id = tostring(id)", "Cannot assign `string` to `id` of type `number`"),
+            finding(local, "name, count, extra = 1", "Cannot assign `integer` to `name`, defined as `string`"),
+            finding(local, "name, count, extra = 1", "Cannot assign `string` to `count`, defined as `integer?`"),
+            finding(local, "id = tostring(id)", "Cannot assign `string` to `id`, defined as `number`"),
+            finding(local, "plain = 'text'", "Cannot assign `string` to `plain`, defined as `integer`"),
         ],
-        "values the type takes, a guarded local, a local without a value, the table a `---@class` declares, \
-         optional and undocumented parameters and untyped locals pass"
+        "as in lua-language-server, a later assignment to a `---@type` local or a `@param` parameter is a \
+         `cast-local-type`, as one to an untyped local is; a guarded local and optional and undocumented \
+         parameters pass"
     );
     let (line, column) = pos(text, "second = pair()", 0);
     let hover = client.hover_text(CLIENT, line, column);
@@ -8411,8 +8453,8 @@ print(hit, struck, part)
     assert_eq!(
         findings(&mut client, CLIENT, &[local, mismatch]),
         [
-            finding(mismatch, "typed = 'x'", "Cannot assign `string` to `typed` of type `integer`"),
-            finding(mismatch, "documented = 1", "Cannot assign `integer` to `documented` of type `string`"),
+            finding(local, "typed = 'x'", "Cannot assign `string` to `typed`, defined as `integer`"),
+            finding(local, "documented = 1", "Cannot assign `integer` to `documented`, defined as `string`"),
             finding(local, "cast = 'x'", "Cannot assign `string` to `cast`, defined as `integer`"),
             finding(local, "captured = 'x'", "Cannot assign `string` to `captured`, defined as `integer`"),
             finding(local, "first, second = 'x'", "Cannot assign `string` to `first`, defined as `integer`"),
@@ -8427,11 +8469,11 @@ print(hit, struck, part)
             finding(local, "text ..= 'x'", "Cannot assign `string` to `text`, defined as `integer`"),
             finding(local, "part = 1", "Cannot assign `integer` to `part`, defined as `string`"),
         ],
-        "a `---@type` or `@param` local is left to `assign-type-mismatch`, a cast or a `---@type` above an \
-         assignment does not change the type a local is declared with, loop variables have the type they are \
-         given, and the literals a function declares it returns are the only ones its local takes; parameters, \
-         `<const>` locals and `_` take anything, as in lua-language-server, and a `BOOL` a native returns may \
-         be an integer"
+        "a `---@type` or `@param` local has its annotated type, as lua-language-server checks it under \
+         `cast-local-type` too, a cast or a `---@type` above an assignment does not change the type a local is \
+         declared with, loop variables have the type they are given, and the literals a function declares it \
+         returns are the only ones its local takes; other parameters, `<const>` locals and `_` take anything, \
+         as in lua-language-server, and a `BOOL` a native returns may be an integer"
     );
     client.set_strict(true);
     let at_id: Vec<_> =
@@ -9139,12 +9181,12 @@ print(describe, amount)
     let finding = |code: &str, needle: &str, message: &str| {
         (code.to_string(), pos(text, needle, 0).0 as u64, message.to_string())
     };
-    let codes = ["assign-type-mismatch", "param-type-mismatch", "return-type-mismatch"];
+    let codes = ["assign-type-mismatch", "cast-local-type", "param-type-mismatch", "return-type-mismatch"];
     let relaxed = findings(&mut client, CLIENT, &codes);
     assert_eq!(
         relaxed,
         [
-            finding("assign-type-mismatch", "size = maybe()", "Cannot assign `number?` to `size` of type `number`"),
+            finding("cast-local-type", "size = maybe()", "Cannot assign `number?` to `size`, defined as `number`"),
             finding(
                 "param-type-mismatch",
                 "needsString(either())",

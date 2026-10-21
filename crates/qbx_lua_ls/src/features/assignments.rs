@@ -1,10 +1,11 @@
 //! `assign-type-mismatch` for variables: a `local` or an assignment with a `---@type` above it has
-//! to store values of that type, and so does a later assignment to a local declared with
-//! `---@type` or to a parameter documented with `@param`. As for `@return`, a value of a different
-//! kind, or a literal the type does not list, is a mismatch, for each type a union lists, `nil`
-//! included, though not the `nil` of a field read. `class_tables` checks the fields of class
-//! tables. The `nil` that a `local` statement gives a name it leaves without a value is left alone,
-//! as a later assignment usually gives the value, unless nothing ever does.
+//! to store values of that type. A later assignment to a local declared with `---@type` or to a
+//! parameter documented with `@param` is left to `cast-local-type`, as lua-language-server reports
+//! it. As for `@return`, a value of a different kind, or a literal the type does not list, is a
+//! mismatch, for each type a union lists, `nil` included, though not the `nil` of a field read.
+//! `class_tables` checks the fields of class tables. The `nil` that a `local` statement gives a
+//! name it leaves without a value is left alone, as a later assignment usually gives the value,
+//! unless nothing ever does.
 
 use qbx_lua_analysis::scope::{LocalId, Resolved};
 use qbx_lua_syntax::ast::*;
@@ -149,15 +150,18 @@ impl<'c> Visitor<'c> for Finder<'_, '_> {
                 }
             }
             StmtKind::Assign { targets, exprs } => {
-                // The `---@type` above the assignment, or else the type its target is declared with.
+                // The `---@type` above the assignment, or else, for a value of no known type, the
+                // type its target is declared with.
                 let declared = |(index, target): (usize, &Expr)| {
                     let own = self.stmt_type(stmt, index);
                     let annotated = own.is_some();
                     let ty = own.or_else(|| match &target.kind {
-                        ExprKind::Name(name) => match self.infer.ctx.resolution.resolve_at(name.span.start) {
-                            Some(Resolved::Local(id)) => self.local_type(id),
-                            _ => None,
-                        },
+                        ExprKind::Name(name) if self.unknowns.is_some() => {
+                            match self.infer.ctx.resolution.resolve_at(name.span.start) {
+                                Some(Resolved::Local(id)) => self.local_type(id),
+                                _ => None,
+                            }
+                        }
                         _ => None,
                     });
                     Target { name: target.span, ty, annotated }

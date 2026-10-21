@@ -908,17 +908,19 @@ an escrowed one, are not checked; see
 ## Typed variables
 
 `assign-type-mismatch` also covers variables whose type is declared. A `local` or an assignment
-with a `---@type` above it has to store values of that type, and so does every later assignment to
-a local declared with `---@type` or to a parameter documented with `@param`:
+with a `---@type` above it has to store values of that type. A later assignment to a local
+declared with `---@type`, or to a parameter documented with `@param`, has to store them too, and
+as lua-language-server reports it as [`cast-local-type`](#local-types), so does qbx-lua-ls, and
+the suppressions written for lua-language-server silence it:
 
 ```lua
 ---@alias State 1 | 2 | 3 | false | true
 
 ---@type State
-local state = "test" -- Cannot assign `"test"` to `state` of type `State`
+local state = "test" -- assign-type-mismatch: Cannot assign `"test"` to `state` of type `State`
 
-state = "abc"        -- Cannot assign `"abc"` to `state` of type `State`
-state = nil          -- Cannot assign `nil` to `state` of type `State`
+state = "abc"        -- cast-local-type: Cannot assign `"abc"` to `state`, defined as `State`
+state = nil          -- cast-local-type: Cannot assign `nil` to `state`, defined as `State`
 ```
 
 The check is that of `return-type-mismatch`: a different kind of value, or a literal the type does
@@ -980,9 +982,10 @@ Unlike in lua-language-server, nothing is reported in a `---@meta` file. It neve
 
 ## Local types
 
-`cast-local-type` reports an assignment that gives a local without a `---@type` or `@param` a value
-its type does not take. As in lua-language-server and TypeScript, such a local has the type of the
-value it is declared with:
+`cast-local-type` reports an assignment that gives a local a value its type does not take. A local
+with a `---@type` or `@param` has that type, as described for
+[typed variables](#typed-variables). As in lua-language-server and TypeScript, any other local has
+the type of the value it is declared with:
 
 ```lua
 ---@return string?
@@ -1003,7 +1006,7 @@ name = 5      -- Cannot assign `integer` to `name`, defined as `string?`
 The check is that of `assign-type-mismatch`, for each type the value may be: a different kind of
 value, or a literal the type does not list. So a `string?` needs a local that may be `nil`, and so
 does clearing a local with `nil`, but as in lua-language-server, a local declared with a table
-constructor may be cleared. A value read from a field or a key has no `nil` or `false` for the
+constructor and no `---@type` may be cleared. A value read from a field or a key has no `nil` or `false` for the
 check, as lua-language-server does not narrow fields, and only a `nil` that an annotation or a stub
 declares counts: lua-language-server leaves out the one a function without `@return` gives, as
 `nextFreePoint()` does by running past its end when it finds none, also where a local passes it on.
@@ -1023,9 +1026,8 @@ A local declared without a value, as `nil`, or with a value of unknown type or `
 value, and so do `_`, `self` and parameters without `@param`, as in lua-language-server. A loop
 variable has the type its loop gives it, such as the `integer` of `for i, v in ipairs(list)`. With
 `strict`, a parameter of a function passed for a function type, such as the handler of
-`fun(id: integer)`, has the type the function type declares, as in TypeScript. Locals with a
-`---@type` or `@param` are left to [`assign-type-mismatch`](#typed-variables), and `<const>` and
-`<close>` locals to `const-reassign`. A `---@cast` changes what a local holds from its line on, but
+`fun(id: integer)`, has the type the function type declares, as in TypeScript. `<const>` and
+`<close>` locals are left to `const-reassign`. A `---@cast` changes what a local holds from its line on, but
 not the type it is declared with, as in lua-language-server, so assigning a value of the cast type
 is still reported; a `---@type` above an assignment is the type of the value it stores. A `BOOL`
 that a native returns may be a boolean or an integer, so either passes for the other where a native

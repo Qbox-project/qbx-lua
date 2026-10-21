@@ -69,9 +69,9 @@ Available features depend on the editor's LSP client.
   `name = name or 'none'` leaves a `string`.
 - Diagnostics and quick fixes with resource and client/server context, plus LuaCATS type checks:
   `missing-fields` and `assign-type-mismatch` for tables and assignments that leave out required
-  fields of their class or store a value of the wrong type, in a field or in a variable typed with
-  `---@type` or `@param`, `param-type-mismatch` for arguments of the wrong type, `undeclared-field`
-  for fields and keys a `---@class (strict)` does not declare, `return-type-mismatch`,
+  fields of their class or store a value of the wrong type, in a field or in a variable that the
+  `---@type` above the statement types, `param-type-mismatch` for arguments of the wrong type,
+  `undeclared-field` for fields and keys a `---@class (strict)` does not declare, `return-type-mismatch`,
   `missing-return` and `redundant-return-value` for functions, including callback handlers, that
   do not return what their `@return`, or the function type they are passed as, declares, and
   `discard-returns` for calls that drop the
@@ -81,9 +81,9 @@ Available features depend on the editor's LSP client.
   `impossible-comparison` reports an `==` or `~=` between values whose declared types share no
   value, such as `GetState() == "invalid"` for a function that returns `"active"|"busy"`, and
   `cast-type-mismatch` a `---@cast` to a type the local is not declared to take.
-  `cast-local-type` reports an assignment that gives a local without an annotation a value of
-  another type than the one it is declared with, such as `speed = "5"` after `local speed = 5`, as
-  lua-language-server and TypeScript do. `inject-field`
+  `cast-local-type` reports an assignment that gives a local a value of another type than its
+  `---@type` or `@param`, or without one the value it is declared with, such as `speed = "5"` after
+  `local speed = 5`, as lua-language-server and TypeScript do. `inject-field`
   reports fields set through a value whose class or table type does not have them,
   `undefined-field` fields read from one, and
   `need-check-nil` a value that may be `nil` used where a missing value raises an error. These
