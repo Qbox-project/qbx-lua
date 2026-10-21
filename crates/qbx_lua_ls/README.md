@@ -49,7 +49,8 @@ Available features depend on the editor's LSP client.
 - Classes written with metatables and no annotations: what `setmetatable({}, Class)` returns, and
   a table given a metatable by `setmetatable`, have the fields of its `__index` table at every
   level, as `Class.__index = Class` sets up, for completion, hover and navigation. A `---@class`
-  keeps the fields it declares.
+  keeps the fields it declares, and a value of a declared type, as in
+  `setmetatable(table.clone(options), marker_mt)`, keeps its type beside those of the `__index`.
 - The `---@operator` lines of a class type what operations on its values give, as
   `---@operator add(Vec): Vec` makes `a + b` a `Vec`, for an operand of the type the line names,
   on either side. A class does not take the operators of its parents, as Lua looks a metamethod up

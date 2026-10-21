@@ -2633,7 +2633,8 @@ impl<'a> Infer<'a> {
     /// What `setmetatable(t, metatable)` makes of a table of type `own`: a table that also has the
     /// fields of `index`, the tables the `__index` of `metatable` gives, as an instance has the
     /// methods of its class. A table with members of its own (`own_table`) is indexed with its
-    /// metatables instead, and a declared type is kept.
+    /// metatables instead. A declared type is kept, with the fields of `index` beside it, as
+    /// lua-language-server reads `setmetatable(table.clone(options), marker_mt)`.
     fn instance_type(&self, own: Type, index: Type, own_table: bool) -> Type {
         if index.is_unknown() || own_table {
             return own;
@@ -2643,7 +2644,7 @@ impl<'a> Infer<'a> {
             Type::Union(types) => types.as_slice(),
             other => std::slice::from_ref(other),
         };
-        if parts.iter().any(|part| matches!(part, Type::Named(..) | Type::Require(_) | Type::Exports(_))) {
+        if parts.iter().any(|part| matches!(part, Type::Require(_) | Type::Exports(_))) {
             return own;
         }
         // An instance of a `---@class` is that class. The fields set on an instance of a table class

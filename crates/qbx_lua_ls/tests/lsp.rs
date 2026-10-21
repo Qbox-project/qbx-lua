@@ -12068,6 +12068,51 @@ print(viaIndex, made, filled, built, early, literal, plain, fromMade, use)
 }
 
 #[test]
+fn declared_values_given_a_metatable_keep_their_type_and_take_its_index() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Test.MarkerOpts
+---@field coords vector3
+---@field width? number
+
+local marker_mt = { width = 2.0 }
+marker_mt.__index = marker_mt
+
+function marker_mt:draw()
+    print(self.coords, self.width)
+end
+
+---@param options Test.MarkerOpts
+local function newMarker(options)
+    local self = setmetatable(table.clone(options), marker_mt)
+    return self
+end
+
+---@param options Test.MarkerOpts
+local function wrap(options)
+    return setmetatable(options, marker_mt)
+end
+
+local marker = newMarker({ coords = vec3(0, 0, 0) })
+marker:draw()
+wrap({ coords = vec3(0, 0, 0) }):draw()
+print(marker.coords.x)
+";
+    client.open_with(CLIENT, text);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field"]),
+        [],
+        "`setmetatable` gives a value of a declared type the fields of the metatable's `__index` too, as \
+         lua-language-server reads it, as `lib.marker.new` of ox_lib builds its markers"
+    );
+    let (l, c) = pos(text, "local marker =", 6);
+    let hover = client.hover_text(CLIENT, l, c);
+    for expected in ["coords: vector3", "draw: function"] {
+        assert!(hover.contains(expected), "the declared type and the index: {expected:?} in {hover}");
+    }
+}
+
+#[test]
 fn deep_metatable_chains_leave_shallower_lookups_whole() {
     // Each table falls back on the one before, deeper than a lookup follows.
     let mut chain = String::from("local C1 = {}\nC1.v = 1\n");
