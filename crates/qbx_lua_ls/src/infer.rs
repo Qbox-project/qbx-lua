@@ -1166,7 +1166,9 @@ impl<'a> Infer<'a> {
 
     /// Whether the side of an `and` or `or` at `side` may be true there, or false without `truthy`,
     /// as its type tells: a number, a string, a table or a function is never false, and `nil` never
-    /// true. A type that tells nothing, as `unknown`, a `boolean` or a generic, may be either.
+    /// true. A type that tells nothing, as `unknown`, a `boolean` or a generic, may be either. A
+    /// native gives `nil` for a string it has none of, as `GetPlayerIdentifierByType` does for an
+    /// identifier the player lacks, so a string it returns may be false.
     fn operand_may_be(&self, side: Span, truthy: bool) -> bool {
         let Some(expr) = expression_at(self.ctx.chunk, side) else { return true };
         let ty = self.guarded(|| self.expand_aliases(&self.expr(expr), 0));
@@ -1174,12 +1176,23 @@ impl<'a> Infer<'a> {
             Type::Union(parts) => &parts[..],
             one => std::slice::from_ref(one),
         };
+        let native_string = |part: &Type| matches!(part, Type::String | Type::StringLit(_)) && self.calls_native(expr);
         parts.iter().any(|part| match part {
             Type::Nil | Type::BooleanLit(false) => !truthy,
             Type::Unknown | Type::Any | Type::Boolean | Type::Variadic(_) | Type::Require(_) => true,
             part if self.names_no_type(part) => true,
+            part if !truthy && native_string(part) => true,
             _ => truthy,
         })
+    }
+
+    /// Whether `expr` calls a native that no script of the workspace defines again.
+    fn calls_native(&self, expr: &Expr) -> bool {
+        let ExprKind::Call { callee, .. } = &expr.unparen().kind else { return false };
+        let ExprKind::Name(name) = &callee.unparen().kind else { return false };
+        !matches!(self.ctx.resolution.resolve_at(name.span.start), Some(Resolved::Local(_)))
+            && self.index.globals_named(&name.text, self.ctx.file).is_empty()
+            && native(&name.text).is_some()
     }
 
     /// `ty`, the type of the field of a local that `expr` reads, as `self.target` or `data.job`,

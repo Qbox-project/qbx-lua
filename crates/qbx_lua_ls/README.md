@@ -230,7 +230,9 @@ In a false `and` or a true `or`, a side that tells nothing about a local counts 
 `nil` and `false` are false in Lua. A call that returns a `number`, a string, a table or a function is
 never false, so for a `number|fun(ped: number): number`,
 `type(max) == "function" and max(ped) or max` is a `number`: the `or` side only runs when `max` is no
-function. A side whose type may be `nil` or `false`, as a `number?`, tells nothing.
+function. A side whose type may be `nil` or `false`, as a `number?`, tells nothing, and so does a
+string that a native returns, as a native gives `nil` for one it has none of:
+`GetPlayerIdentifierByType(src, "discord")` does for a player without Discord.
 
 A guard on a local that is never assigned again also tells what the value it is declared with does,
 as TypeScript reads an aliased condition, about the locals in that value that are never assigned

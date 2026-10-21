@@ -16672,6 +16672,46 @@ print(message, reassignedTarget, reassignedAlias, failed, kinds, field)
 }
 
 #[test]
+fn a_string_a_native_returns_may_be_missing_in_an_and() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@return string
+local function name() return 'a' end
+
+---@param kind 'license'|'discord'
+local function lookup(src, kind)
+    if kind == 'discord' and GetPlayerIdentifierByType(src, 'discord') then
+        return 'linked'
+    elseif kind == 'discord' then
+        return 'missing'
+    end
+end
+
+---@param kind 'license'|'discord'
+local function named(kind)
+    if kind == 'license' and name() then
+        return 'license'
+    elseif kind == 'license' then
+        return 'never'
+    end
+end
+print(lookup, named)
+";
+    client.open_with(SERVER, text);
+    for strict in [false, true] {
+        client.set_strict(strict);
+        let lines: Vec<u64> =
+            findings(&mut client, SERVER, &["impossible-comparison"]).into_iter().map(|(_, line, _)| line).collect();
+        assert_eq!(
+            lines,
+            [pos(text, "elseif kind == 'license'", 0).0 as u64],
+            "a native gives `nil` for a string it has none of, so the `and` may fail on it, while a function \
+             declared to return a string never does (strict: {strict})"
+        );
+    }
+}
+
+#[test]
 fn a_side_of_and_or_that_tells_nothing_counts_by_its_type() {
     let mut client = Client::start(fixture_root());
     let text = "\
