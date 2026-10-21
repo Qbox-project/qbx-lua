@@ -64,7 +64,7 @@ quote_style = "preserve"
 The default exclusions include `node_modules`, `.git`, and `[builders]` directory contents.
 Directory traversal also skips hidden directories. It follows directory symlinks, as FiveM does,
 except links into the folder it traverses or to a folder above it, and reads a folder that several
-links lead to once.
+links lead to once, also when one leads to a folder inside the one another leads to.
 
 ### Ignoring diagnostics
 

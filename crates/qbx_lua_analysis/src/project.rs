@@ -119,12 +119,20 @@ pub fn walks_into(root: Option<&Path>, entry: &DirEntry) -> bool {
     linked_folder(entry).is_none_or(|target| leads_elsewhere(root, &target))
 }
 
+/// The real path of `path`, a folder that a walk reached through one of the `linked` folders, each a
+/// link and its real path, by the nearest of them.
+fn real_path(linked: &[(PathBuf, PathBuf)], path: &Path) -> Option<PathBuf> {
+    let reached = linked.iter().filter_map(|(link, target)| Some((link, target, path.strip_prefix(link).ok()?)));
+    reached.max_by_key(|(link, ..)| link.components().count()).map(|(_, target, rest)| target.join(rest))
+}
+
 /// The Lua files under `root`, sorted. Symbolic links are followed as `walks_into` decides, and a
-/// folder that several of them lead to is read once, through the first by name.
+/// folder that several of them lead to, also as part of a folder another leads to, is read once,
+/// through the first by name.
 pub fn lua_files_under(root: &Path, config: &Config) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let canonical_root = root.canonicalize().ok();
-    let mut linked: FxHashSet<PathBuf> = FxHashSet::default();
+    let mut linked: Vec<(PathBuf, PathBuf)> = Vec::new();
     let walker = WalkDir::new(root).follow_links(true).sort_by_file_name().into_iter().filter_entry(|entry| {
         let name = entry.file_name().to_string_lossy();
         let hidden_dir = entry.file_type().is_dir() && name.starts_with('.') && entry.depth() > 0;
@@ -132,7 +140,17 @@ pub fn lua_files_under(root: &Path, config: &Config) -> Vec<PathBuf> {
             return false;
         }
         match linked_folder(entry) {
-            Some(target) => leads_elsewhere(canonical_root.as_deref(), &target) && linked.insert(target),
+            Some(target) => {
+                let elsewhere = leads_elsewhere(canonical_root.as_deref(), &target)
+                    && !linked.iter().any(|(_, followed)| target.starts_with(followed));
+                if elsewhere {
+                    linked.push((entry.path().to_path_buf(), target));
+                }
+                elsewhere
+            }
+            None if entry.file_type().is_dir() => {
+                real_path(&linked, entry.path()).is_none_or(|real| linked.iter().all(|(_, followed)| *followed != real))
+            }
             None => true,
         }
     });
@@ -712,6 +730,33 @@ mod tests {
         // The folder two links lead to is read through the first, and links into the tree, or to a
         // folder above it, are left out.
         assert_eq!(relative, ["[again]/racing/client.lua", "[core]/core.lua"]);
+    }
+
+    #[test]
+    fn lua_files_under_reads_a_linked_folder_inside_another_once() {
+        let root = std::env::temp_dir().join(format!("qbx-nested-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let at = |relative: &str| relative.split('/').fold(root.clone(), |path, part| path.join(part));
+        for file in ["elsewhere/racing/client.lua", "elsewhere/shop/client.lua"] {
+            std::fs::create_dir_all(at(file).parent().unwrap()).unwrap();
+            std::fs::write(at(file), "").unwrap();
+        }
+        std::fs::create_dir_all(at("server/resources")).unwrap();
+        let resources = at("server/resources");
+        let links = [
+            ("elsewhere/racing", "server/resources/[a]"),
+            ("elsewhere", "server/resources/[b]"),
+            ("elsewhere/racing", "server/resources/[c]"),
+        ];
+        if !links.iter().all(|(target, link)| link_folder(&at(target), &at(link))) {
+            eprintln!("skipped: folder links cannot be created here");
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        }
+        let files = lua_files_under(&resources, &Config::default());
+        let relative: Vec<String> = files.iter().map(|file| relative_slash_path(&resources, file)).collect();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(relative, ["[a]/client.lua", "[b]/shop/client.lua"]);
     }
 
     #[test]
