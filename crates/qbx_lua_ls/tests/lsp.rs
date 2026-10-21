@@ -13490,6 +13490,34 @@ fn cross_file_rules_run_in_the_editor() {
 }
 
 #[test]
+fn locale_keys_stay_used_when_one_file_of_their_resource_is_checked_again() {
+    let provider = "exports('thing', function(a) return 1 end)\n";
+    let workspace = TempWorkspace::new(
+        "locale-readers",
+        &[
+            ("provider/fxmanifest.lua", "fx_version 'cerulean'\ngame 'gta5'\nshared_script 'shared.lua'\n"),
+            ("provider/shared.lua", provider),
+            (
+                "consumer/fxmanifest.lua",
+                "fx_version 'cerulean'\ngame 'gta5'\ndependency 'provider'\nshared_scripts { 'one.lua', 'two.lua' }\n",
+            ),
+            ("consumer/one.lua", "Value = exports.provider:thing()\nprint(locale('a'))\n"),
+            ("consumer/two.lua", "print(locale('b'))\n"),
+            ("consumer/locales/en.json", "{\n  \"a\": \"A\",\n  \"b\": \"B\",\n  \"c\": \"C\"\n}\n"),
+        ],
+    );
+    let mut client = Client::start(workspace.0.clone());
+    let unused = [("qbox/unused-locale-key".to_string(), 3)];
+    assert_eq!(client.diagnostics_for("consumer/locales/en.json"), unused);
+
+    // `one.lua` reads the export, so saving its new parameter checks that file again, but not `two.lua`.
+    client.open_with("provider/shared.lua", provider);
+    client.change("provider/shared.lua", 2, "exports('thing', function(b) return 1 end)\n");
+    client.notify("textDocument/didSave", json!({ "textDocument": { "uri": client.uri("provider/shared.lua") } }));
+    assert_eq!(client.diagnostics_for("consumer/locales/en.json"), unused, "`b` is still used by `two.lua`");
+}
+
+#[test]
 fn completes_locale_keys_convars_and_state_bags() {
     let mut client = Client::start(fixture_root());
     let text = client.open(SHOP_CLIENT);

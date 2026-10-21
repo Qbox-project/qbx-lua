@@ -530,7 +530,8 @@ impl Server {
                 });
             }
         }
-        for (resource, usages) in locale_usage {
+        // The keys a resource uses are only all known when each of its files was checked.
+        for (resource, usages) in locale_usage.into_iter().filter(|(resource, _)| in_scope(Some(*resource))) {
             let Some((uri, found)) = check::unused_locale_keys(&self.ws, resource, usages, &rule_settings) else {
                 continue;
             };
