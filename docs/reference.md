@@ -538,12 +538,14 @@ reported. Only clear cases count, and the rest is left alone:
   declares nothing, unless the parameter is typed with the generic alone and another argument
   declares it. `table.insert(list, value)` takes for `value` the type of the entries of a `list`
   declared as `number[]`, as TypeScript checks `push<T>(list: T[], value: T)`, while `list: T[]`,
-  which decides the generic, is left out. A function that a callee passes to a callback, such as
-  `resolve` of `fun(resolve: fun(value: T))`, takes and returns what the other arguments of that
-  call declare for the generic, as the `boolean` of `Promise:New('boolean', function(resolve) end)`
-  for a `` `T` ``, and any value for a generic they leave unbound. What a generic function returns
-  is declared as far as the declared types of the arguments bind its generics, as the `string?` of
-  `first(names)` for `fun(list: V[]): V?` and a `names` declared as `string[]`.
+  which decides the generic, is left out. `nil` decides no generic, and such a parameter takes it,
+  as TypeScript adds the `null` of an argument to the type it infers. A function that a callee
+  passes to a callback, such as `resolve` of `fun(resolve: fun(value: T))`, takes and returns what
+  the other arguments of that call declare for the generic, as the `boolean` of
+  `Promise:New('boolean', function(resolve) end)` for a `` `T` ``, and any value for a generic they
+  leave unbound. What a generic function returns is declared as far as the declared types of the
+  arguments bind its generics, as the `string?` of `first(names)` for `fun(list: V[]): V?` and a
+  `names` declared as `string[]`.
 - Parameters typed with the name of a native handle such as `Vehicle`, which resources also declare
   as classes.
 - Calls through globals in an opaque resource, such as an escrowed one; see

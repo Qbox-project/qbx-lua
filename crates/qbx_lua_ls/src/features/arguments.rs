@@ -362,8 +362,10 @@ pub fn expected(param: &Param) -> &Type {
 /// `param`, typed by a generic of `fun` alone, as the `value: T` of `table.insert`, with the type
 /// that `bound` gives that generic, as the arguments of the call decide it: TypeScript checks an
 /// argument against what the first argument that decides the generic gives it. A parameter that
-/// only mentions a generic, as `list: T[]`, is what decides it, and stays unchecked. `None` when
-/// `param` is no such parameter, or no argument decides the generic.
+/// only mentions a generic, as `list: T[]`, is what decides it, and stays unchecked. As TypeScript
+/// adds the `null` of any argument to the type it infers, `nil` decides no generic and the
+/// parameter takes it, so `same(nil, 'a')` and `contains(names, name)` for a `string?` name pass.
+/// `None` when `param` is no such parameter, or no argument decides the generic.
 fn bound_param(fun: &FunType, param: &Param, bound: &[(SmolStr, Type)]) -> Option<Param> {
     let is_generic = |name: &str| fun.generics.iter().any(|generic| generic == name);
     let Type::Named(name, args) = expected(param).without_nil() else { return None };
@@ -371,8 +373,9 @@ fn bound_param(fun: &FunType, param: &Param, bound: &[(SmolStr, Type)]) -> Optio
         return None;
     }
     let ty = substitute(&param.ty, bound);
-    let decided = !matches!(expected(&Param { ty: ty.clone(), ..Param::default() }), Type::Unknown | Type::Any);
-    (decided && !mentions(&ty, &is_generic)).then(|| Param { ty, ..param.clone() })
+    let decided = expected(&Param { ty: ty.clone(), ..Param::default() }).without_nil();
+    let decided = !matches!(decided, Type::Unknown | Type::Any | Type::Nil);
+    (decided && !mentions(&ty, &is_generic)).then(|| Param { ty, optional: true, ..param.clone() })
 }
 
 /// The message for a value of type `given` that `param` of `fun` does not take.

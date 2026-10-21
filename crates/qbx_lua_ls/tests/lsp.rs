@@ -7534,6 +7534,47 @@ return fill
 }
 
 #[test]
+fn nil_decides_no_generic_and_passes_for_one() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@generic T
+---@param a T
+---@param b T
+local function same(a, b) return a, b end
+
+---@generic T
+---@param list T[]
+---@param value T
+local function contains(list, value) return list[1] == value end
+
+---@type string[]
+local names = {}
+---@type string?
+local name
+
+same(nil, 'a')
+same('a', nil)
+contains(names, name)
+contains(names, nil)
+contains(names, 1)
+";
+    client.open_with(CLIENT, text);
+    let expected = [(
+        "param-type-mismatch".to_string(),
+        pos(text, "names, 1)", 0).0 as u64,
+        "Cannot assign `integer` to parameter `value` of type `string`".to_string(),
+    )];
+    assert_eq!(
+        findings(&mut client, CLIENT, &["param-type-mismatch"]),
+        expected,
+        "as TypeScript adds the `null` of an argument to the type it infers for a generic, `nil` binds none \
+         and passes for one"
+    );
+    client.set_strict(true);
+    assert_eq!(findings(&mut client, CLIENT, &["param-type-mismatch"]), expected, "the same with `strict`");
+}
+
+#[test]
 fn strict_classes_take_only_the_keys_a_literal_index_lists() {
     let mut client = Client::start(fixture_root());
     let text = "\
