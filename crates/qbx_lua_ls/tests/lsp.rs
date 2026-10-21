@@ -13455,6 +13455,34 @@ fn builtin_events_complete_hover_and_type_their_handlers() {
 }
 
 #[test]
+fn game_events_the_server_triggers_type_their_handlers() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+AddEventHandler('explosionEvent', function(sender, data)
+    print(sender, data.explosionType, data.posX)
+end)
+AddEventHandler('fireEvent', function(sender, data)
+    local fire = data[1][1]
+    print(sender, fire.weaponHash)
+end)
+AddEventHandler('onPedDeath', function(ped, attacker, weaponHash)
+    print(ped, attacker, weaponHash)
+end)";
+    client.open_with(SERVER, text);
+    for (line, character, expected) in
+        [(1, 23, "explosionType: integer"), (5, 23, "weaponHash: integer"), (8, 25, "weaponHash: integer")]
+    {
+        let hover = client.hover_text(SERVER, line, character);
+        assert!(hover.contains(expected), "{expected}: {hover}");
+    }
+    assert_eq!(client.diagnostics_for(SERVER), []);
+
+    client.open_with(CLIENT, text);
+    let wrong_side = ("fivem/event-wrong-side".to_string(), 0);
+    assert!(client.diagnostics_for(CLIENT).contains(&wrong_side), "only the server triggers explosionEvent");
+}
+
+#[test]
 fn native_callbacks_take_the_parameters_their_documentation_gives() {
     let mut client = Client::start(fixture_root());
     let text = "RegisterCommand('heal', function(source, args, rawCommand)\n    print(source, args[1], rawCommand)\nend, false)\nSetHttpHandler(function(request, response)\n    response.send(request.path)\nend)";

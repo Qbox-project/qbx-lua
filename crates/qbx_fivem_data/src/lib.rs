@@ -443,8 +443,12 @@ mod tests {
         assert_eq!(side("onClientResourceStart"), Some(Side::Client));
         assert_eq!(side("playerDropped"), Some(Side::Server));
         assert_eq!(side("rconCommand"), Some(Side::Server));
+        for name in ["explosionEvent", "fireEvent", "serverEntityCreated", "onPedDeath", "stopNetworkSyncedSceneEvent"]
+        {
+            assert_eq!(side(name), Some(Side::Server), "{name}");
+        }
         assert_eq!(side("setModel"), None, "the fields of other classes are no events");
-        assert_eq!(builtin_events().len(), 30);
+        assert_eq!(builtin_events().len(), 46);
     }
 
     #[cfg(feature = "docs")]

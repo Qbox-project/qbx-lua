@@ -23,15 +23,31 @@
 ---@field (server) playerLeftScope fun(data: PlayerScopeData) # Triggered when a player leaves the scope of another player. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#playerleftscope)
 ---@field (server) entityCreating fun(handle: integer) # Triggered when an entity is being created; `CancelEvent()` stops it. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#entitycreating)
 ---@field (server) entityCreated fun(handle: integer) # Triggered when an entity has been created. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#entitycreated)
+---@field (server) serverEntityCreated fun(handle: integer) # Triggered when a server script has created an entity, which may have no network owner yet.
 ---@field (server) entityRemoved fun(entity: integer) # Triggered when an entity is removed. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#entityremoved)
+---@field (server) onPedHealthChanged fun(ped: integer, oldHealth: integer, health: integer, oldArmour: integer, armour: integer, attacker: integer, weaponHash: integer) # Triggered when the health or armour of a ped changes; `attacker` and `weaponHash` are 0 when unknown.
+---@field (server) onPedDeath fun(ped: integer, attacker: integer, weaponHash: integer) # Triggered when a ped dies; `attacker` and `weaponHash` are 0 when unknown.
 ---@field (server) onEntityBucketChange fun(entity: integer, bucket: integer, oldBucket: integer) # Triggered when an entity moves to another routing bucket. [Docs](https://docs.fivem.net/docs/scripting-reference/events/list/onEntityBucketChange/)
 ---@field (server) onPlayerBucketChange fun(player: string, bucket: integer, oldBucket: integer) # Triggered when a player moves to another routing bucket. [Docs](https://docs.fivem.net/docs/scripting-reference/events/list/onPlayerBucketChange/)
 ---@field (server) weaponDamageEvent fun(sender: string, data: WeaponDamageEventData) # Triggered when a client wants to damage an entity that another player owns; `CancelEvent()` blocks the damage. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#weapondamageevent)
+---@field (server) weaponDamageReply fun(sender: string, data: WeaponDamageReplyData) # Triggered when a client answers a `weaponDamageEvent` with the health of the entity hit.
 ---@field (server) startProjectileEvent fun(sender: string, data: StartProjectileEventData) # Triggered when a client creates a projectile; `CancelEvent()` blocks it. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#startprojectileevent)
 ---@field (server) ptFxEvent fun(sender: string, data: PtFxEventData) # Triggered when a client creates a particle effect; `CancelEvent()` blocks it. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#ptfxevent)
+---@field (server) fireEvent fun(sender: string, data: [FireEventFire[]]) # Triggered when a client starts fires; `CancelEvent()` blocks them.
+---@field (server) explosionEvent fun(sender: string, data: ExplosionEventData) # Triggered when a client creates an explosion; `CancelEvent()` blocks it.
 ---@field (server) removeAllWeaponsEvent fun(sender: string, data: RemoveAllWeaponsEventData) # Triggered when a client removes all weapons from a ped that another player owns; `CancelEvent()` blocks it. [Docs](https://docs.fivem.net/docs/scripting-reference/events/server-events/#removeallweaponsevent)
+---@field (server) giveWeaponEvent fun(sender: string, data: GiveWeaponEventData) # Triggered when a client gives a weapon to a ped that another player owns; `CancelEvent()` blocks it.
+---@field (server) removeWeaponEvent fun(sender: string, data: RemoveWeaponEventData) # Triggered when a client removes a weapon from a ped that another player owns; `CancelEvent()` blocks it.
+---@field (server) clearPedTasksEvent fun(sender: string, data: ClearPedTasksEventData) # Triggered when a client clears the tasks of a ped that another player owns; `CancelEvent()` blocks it.
+---@field (server) givePedScriptedTaskEvent fun(sender: string, data: GivePedScriptedTaskEventData) # Triggered when a client gives a scripted task to a ped that another player owns; `CancelEvent()` blocks it.
 ---@field (server) respawnPlayerPedEvent fun(sender: string, data: RespawnPlayerPedEventData) # Triggered when a player respawns. Needs OneSync. [Docs](https://docs.fivem.net/docs/scripting-reference/events/list/respawnPlayerPedEvent/)
+---@field (server) respawnPlayerPedReply fun(sender: string, data: RespawnPlayerPedReplyData) # Triggered when a client answers a `respawnPlayerPedEvent`.
 ---@field (server) vehicleComponentControlEvent fun(sender: string, data: VehicleComponentControlEventData) # Triggered when a ped takes control of a component of a vehicle, such as a seat. Needs OneSync. [Docs](https://docs.fivem.net/docs/scripting-reference/events/list/vehicleComponentControlEvent/)
+---@field (server) vehicleComponentControlReply fun(sender: string, data: VehicleComponentControlReplyData) # Triggered when a client answers a `vehicleComponentControlEvent`.
+---@field (server) requestNetworkSyncedSceneEvent fun(sender: string, data: NetworkSyncedSceneEventData) # Triggered when a client asks to start a synchronised scene; `CancelEvent()` blocks it.
+---@field (server) startNetworkSyncedSceneEvent fun(sender: string, data: StartNetworkSyncedSceneEventData) # Triggered when a client starts a synchronised scene; `CancelEvent()` blocks it.
+---@field (server) updateNetworkSyncedSceneEvent fun(sender: string, data: UpdateNetworkSyncedSceneEventData) # Triggered when a client changes the rate of a synchronised scene; `CancelEvent()` blocks it.
+---@field (server) stopNetworkSyncedSceneEvent fun(sender: string, data: NetworkSyncedSceneEventData) # Triggered when a client stops a synchronised scene; `CancelEvent()` blocks it.
 ---@field (server) rconCommand fun(command: string, arguments: string[]) # Deprecated: use `RegisterCommand` with `restricted` instead. Triggered when a command is executed over RCON. [Docs](https://docs.fivem.net/docs/scripting-reference/events/list/rconCommand/)
 
 ---The functions of `populationPedCreating` that change the ped being created.
@@ -84,6 +100,12 @@
 ---@field impactDirZ number
 ---@field [string] any
 
+---What a client answers a `weaponDamageEvent` with.
+---@class WeaponDamageReplyData
+---@field health integer # The health of the entity hit.
+---@field time integer
+---@field f131 boolean
+
 ---What a client sends with `startProjectileEvent`.
 ---@class StartProjectileEventData
 ---@field ownerId integer # The network id of the entity that fires.
@@ -120,9 +142,57 @@
 ---@field entityNetId integer
 ---@field [string] any
 
+---A fire that a client starts with `fireEvent`.
+---@class FireEventFire
+---@field isEntity boolean # Whether the fire burns on an entity.
+---@field entityGlobalId integer # The network id of the entity that burns, or 0.
+---@field posX number
+---@field posY number
+---@field posZ number
+---@field maxChildren integer
+---@field weaponHash integer # The hash of the weapon that started the fire, or 0.
+---@field fireId integer
+---@field [string] any
+
+---What a client sends with `explosionEvent`.
+---@class ExplosionEventData
+---@field ownerNetId integer # The network id of the entity that causes the explosion.
+---@field explosionType integer
+---@field damageScale number
+---@field posX number
+---@field posY number
+---@field posZ number
+---@field cameraShake number
+---@field isAudible boolean
+---@field isInvisible boolean
+---@field [string] any
+
 ---What a client sends with `removeAllWeaponsEvent`.
 ---@class RemoveAllWeaponsEventData
 ---@field pedId integer # The network id of the ped.
+
+---What a client sends with `giveWeaponEvent`.
+---@class GiveWeaponEventData
+---@field pedId integer # The network id of the ped.
+---@field weaponType integer # The hash of the weapon.
+---@field ammo integer
+---@field unk1 boolean # Whether `ammo` is negative.
+---@field givenAsPickup boolean
+
+---What a client sends with `removeWeaponEvent`.
+---@class RemoveWeaponEventData
+---@field pedId integer # The network id of the ped.
+---@field weaponType integer # The hash of the weapon.
+
+---What a client sends with `clearPedTasksEvent`.
+---@class ClearPedTasksEventData
+---@field pedId integer # The network id of the ped.
+---@field immediately boolean
+
+---What a client sends with `givePedScriptedTaskEvent`.
+---@class GivePedScriptedTaskEventData
+---@field entityNetId integer # The network id of the ped.
+---@field taskId integer
 
 ---What a client sends with `respawnPlayerPedEvent`. Some fields differ between game builds.
 ---@class RespawnPlayerPedEventData
@@ -130,6 +200,10 @@
 ---@field posY number
 ---@field posZ number
 ---@field [string] any
+
+---What a client answers a `respawnPlayerPedEvent` with.
+---@class RespawnPlayerPedReplyData
+---@field respawnFailedResult boolean
 
 ---What a client sends with `vehicleComponentControlEvent`.
 ---@class VehicleComponentControlEventData
@@ -139,3 +213,44 @@
 ---@field request boolean
 ---@field componentIsSeat boolean
 ---@field pedInSeat integer # The network id of the ped in the seat, or 0.
+
+---What a client answers a `vehicleComponentControlEvent` with.
+---@class VehicleComponentControlReplyData
+---@field isGranted boolean
+---@field componentIsSeat boolean
+---@field pedGlobalId integer # The network id of the ped in the seat, or 0.
+
+---What a client sends with `requestNetworkSyncedSceneEvent` and `stopNetworkSyncedSceneEvent`.
+---@class NetworkSyncedSceneEventData
+---@field sceneId integer
+
+---What a client sends with `updateNetworkSyncedSceneEvent`.
+---@class UpdateNetworkSyncedSceneEventData
+---@field sceneId integer
+---@field rate number
+
+---What a client sends with `startNetworkSyncedSceneEvent`.
+---@class StartNetworkSyncedSceneEventData
+---@field sceneId integer
+---@field startTime integer
+---@field isActive boolean
+---@field scenePosX number
+---@field scenePosY number
+---@field scenePosZ number
+---@field sceneRotX number
+---@field sceneRotY number
+---@field sceneRotZ number
+---@field sceneRotW number
+---@field hasAttachEntity boolean
+---@field attachEntityId integer # The network id of the entity the scene is attached to, or 0.
+---@field attachEntityBone integer
+---@field phaseToStopScene number
+---@field rate number
+---@field holdLastFrame boolean
+---@field isLooped boolean
+---@field phase number
+---@field cameraAnimHash integer
+---@field animDictHash integer
+---@field pedEntities table[]
+---@field nonPedEntities table[]
+---@field mapEntities table[]
