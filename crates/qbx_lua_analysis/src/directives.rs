@@ -36,11 +36,10 @@ fn parse_directive(text: &str, own_line: bool) -> Option<(Action, Vec<(usize, &s
         let action = if own_line { Action::Disable } else { Action::DisableLine };
         return ignores.then_some((action, Vec::new()));
     }
-    let rest = body
-        .strip_prefix("qbx-lint:")
-        .or_else(|| body.strip_prefix("qbxlint:"))
-        .or_else(|| body.strip_prefix("@diagnostic"))?
-        .trim_start();
+    let (rest, lua_ls) = match body.strip_prefix("@diagnostic") {
+        Some(rest) => (rest.trim_start(), true),
+        None => (body.strip_prefix("qbx-lint:").or_else(|| body.strip_prefix("qbxlint:"))?.trim_start(), false),
+    };
     // Any whitespace separates, so a non-breaking space pasted in where a space was meant still works.
     let (action, codes) = rest.split_once(|c: char| c == ':' || c.is_whitespace()).unwrap_or((rest, ""));
     let action = match action {
@@ -61,6 +60,10 @@ fn parse_directive(text: &str, own_line: bool) -> Option<(Action, Vec<(usize, &s
         let end = rest.find(is_separator).unwrap_or(rest.len());
         codes.push((text.len() - rest.len(), &rest[..end]));
         rest = &rest[end..];
+        // LuaLS reads the codes of `---@diagnostic` up to the first that no comma follows.
+        if lua_ls && !rest.trim_start().starts_with(',') {
+            break;
+        }
     }
     Some((action, codes))
 }
@@ -174,6 +177,16 @@ function B() end",
                 ("fivem/loop-never-yields", "fivem/loop-never-yields")
             ]
         );
+    }
+
+    #[test]
+    fn diagnostic_codes_end_at_the_first_without_a_comma() {
+        let s = suppressions("---@diagnostic disable-next-line: unused-local (set later by bridge)\nlocal a\n---@diagnostic disable-next-line: empty-block ,unused-local  undefined-global\nlocal b\n-- qbx-lint: disable-next-line unused-local undefined-global\nprint(c)");
+        assert!(s.is_suppressed("unused-local", 1));
+        assert!(!s.is_suppressed("bridge)", 1));
+        assert!(s.is_suppressed("unused-local", 3));
+        assert!(!s.is_suppressed("undefined-global", 3));
+        assert!(s.is_suppressed("undefined-global", 5));
     }
 
     #[test]

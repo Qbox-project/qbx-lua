@@ -141,7 +141,8 @@ Citizen.Wait(0)
 
 Omitting rule codes suppresses all findings in the selected line or range, except syntax errors.
 Comma-separated and space-separated rule codes are accepted. LuaLS-style directives are also
-recognized:
+recognized. As in LuaLS, their codes end at the first one that no comma follows, so the words after
+it, as in `---@diagnostic disable-next-line: unused-local (set later)`, are a note:
 
 ```lua
 ---@diagnostic disable-next-line: undefined-global

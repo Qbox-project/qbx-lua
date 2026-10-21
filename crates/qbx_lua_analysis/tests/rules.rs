@@ -1898,6 +1898,7 @@ local b = 2
 ---@diagnostic disable: unused-vararg, miss-end, codestyle-check
 ---@diagnostic enable: undefined-globl
 -- luacheck: ignore 211
+---@diagnostic disable-next-line: undefined-global (set later by bridge)
 print(a, b)";
     assert_eq!(reported_lines(source, "unknown-diag-code"), [1, 3, 6]);
     let messages: Vec<String> = findings(source, "unknown-diag-code").into_iter().map(|(_, m)| m).collect();
