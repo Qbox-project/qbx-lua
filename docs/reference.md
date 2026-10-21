@@ -1272,7 +1272,9 @@ Only clear cases count, and the rest is left alone:
   local without `---@type` or `@param`: `coords = nil` in one function leaves `coords.x` in another,
   or after a call that may yield such as `Wait(0)`, unchecked, while a `nil` assigned in the same
   function counts. So is the `nil` that the `?` of an optional parameter of a callback adds, as for
-  the `body` of `PerformHttpRequest`.
+  the `body` of `PerformHttpRequest`. A guard before a call that may yield holds after it too, also
+  for a local with a `---@type` or `@param`, so `zone.name` after `if not zone then return end` and
+  `Wait(500)` passes.
 
 Guards only narrow the code after them, so a read inside a function defined before the guard is
 reported, as `return name:upper()` is in a `local function` above `if not name then return end`:

@@ -329,7 +329,8 @@ end
 
 A call that yields lets that code run, as the event handlers of a script do while one of its threads
 waits. After one, a local that other code assigns may hold any value that code gives it again, so a
-guard before the call no longer tells about it:
+guard before the call no longer tells `impossible-comparison` about it, nor, with
+[`strict`](../../docs/reference.md#strict-mode), any check:
 
 ```lua
 local status = "pending"
@@ -341,6 +342,10 @@ CreateThread(function()
     end
 end)
 ```
+
+Without `strict`, the other checks read the guard as holding after the call, as lua-language-server
+does, so `zone.name` after `if not zone then return end` and `Wait(500)` is not reported for a
+`---@type Zone?` that a handler clears.
 
 The calls that yield are those of `Wait`, `Citizen.Wait`, `Citizen.Await` and `coroutine.yield`,
 those of a function read as `await`, as `lib.callback.await` and `MySQL.query.await`, and those of

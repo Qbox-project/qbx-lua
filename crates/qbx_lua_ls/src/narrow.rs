@@ -247,6 +247,17 @@ const MAX_KEYS: usize = 4;
 /// aliased conditions.
 const MAX_ALIAS_DEPTH: u8 = 5;
 
+/// How the code that a call runs, or runs while it yields, gives a local the values of an origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Ran {
+    /// The call runs it.
+    Call,
+    /// It runs while the call yields.
+    Yield,
+    /// It runs while the call yields, and the guards before the call still tell about the values.
+    Kept,
+}
+
 /// Where a value of a local comes from.
 #[derive(Clone, Copy, Debug)]
 pub enum Origin<'a> {
@@ -368,9 +379,9 @@ fn name_root(resolution: &Resolution, name: &Name) -> Root {
 /// creation and the other functions assign, and once a function that assigns it is created, the
 /// code around may find what any function gives it, unless a runtime function that runs it later,
 /// as `SetTimeout` does, is given it. A call that yields, as `Wait(0)` does, lets that code run
-/// too, so after one the locals it may assign hold any value it gives them again. Another call may
-/// run that code, so after one they may also hold what it gives them, which `Flow::counts` tells
-/// who reads it whether to take.
+/// too, so after one the locals it may assign hold any value it gives them again, and another call
+/// may run that code, so after one they may also hold what it gives them, which `Flow::counts`
+/// tells who reads it whether to take.
 ///
 /// The fields of locals and globals that guards test or assignments set, as `self.target`,
 /// `data.job.name` or `Config.Logs.Service`, are narrowed like locals, an assignment giving one the
@@ -385,9 +396,9 @@ pub struct Flow<'a> {
     origins: Vec<Origin<'a>>,
     /// The origins of the values that each set of `Origin::Others` stands for, in order.
     others: Vec<Rc<[u32]>>,
-    /// The origins of `Origin::Others` that stand for what the code a call runs gives a local or a
-    /// field.
-    called: FxHashSet<u32>,
+    /// The origins of `Origin::Others` that stand for what the code a call runs, or runs while it
+    /// yields, gives a local or a field, with how.
+    ran: FxHashMap<u32, Ran>,
     /// The origin of the value each assignment gives a local, by the start of the name it assigns.
     written: FxHashMap<u32, u32>,
     /// The origin of the value each assignment gives a field of a local, as `data.job.name = name`
@@ -449,7 +460,7 @@ impl<'a> Flow<'a> {
         let flow = Flow {
             origins,
             others: Vec::new(),
-            called: FxHashSet::default(),
+            ran: FxHashMap::default(),
             written,
             stored,
             chained: FxHashMap::default(),
@@ -517,9 +528,16 @@ impl<'a> Flow<'a> {
 
     /// Whether the values that `origin` gives count. What the code a call runs gives counts only
     /// `through_calls` and without `strict`: as lua-language-server and TypeScript read them, a guard
-    /// still holds after the call, though an `impossible-comparison` cannot rely on it.
+    /// still holds after the call, though an `impossible-comparison` cannot rely on it. What the code
+    /// that runs while a call yields gives counts with `strict` or `through_calls`, and otherwise
+    /// with what the guards before the call tell, as lua-language-server reads them as holding.
     pub fn counts(&self, origin: u32, strict: bool, through_calls: bool) -> bool {
-        !self.called.contains(&origin) || (through_calls && !strict)
+        match self.ran.get(&origin) {
+            None => true,
+            Some(Ran::Call) => through_calls && !strict,
+            Some(Ran::Yield) => strict || through_calls,
+            Some(Ran::Kept) => !strict && !through_calls,
+        }
     }
 
     /// The origins of the values that assignments which read `local` give it, in the order they are
@@ -713,8 +731,9 @@ struct Walker<'a, 'r> {
     /// The other calls that may run code of a script.
     runs: Calls,
     /// The origins that stand for what the values of a set of `Origin::Others` give once a call runs
-    /// the code that gives them, by the origin of the set, and the one for the fields of any table.
-    called: FxHashMap<Option<u32>, u32>,
+    /// the code that gives them, or yields while it runs, by the origin of the set and how, and the
+    /// one for the fields of any table.
+    ran: FxHashMap<(Option<u32>, Ran), u32>,
     /// The functions that runtime functions are given to run later, by where they start.
     deferred: FxHashSet<u32>,
     aliases: Aliases,
@@ -845,7 +864,7 @@ impl<'a, 'r> Walker<'a, 'r> {
             others_of: FxHashMap::default(),
             yields,
             runs,
-            called: FxHashMap::default(),
+            ran: FxHashMap::default(),
             deferred: deferred.out,
             aliases: Aliases::default(),
             gotos: FxHashMap::default(),
@@ -941,11 +960,11 @@ impl<'a, 'r> Walker<'a, 'r> {
 
     /// `delta`, once the function being walked yields: the locals that the code that runs meanwhile
     /// may assign may hold what it gives them, and the fields of any table may hold anything.
-    fn yielded(&self, mut delta: Delta) -> Delta {
-        let others = self.frames.last().map_or(&[][..], |frame| &frame.others[..]);
+    fn yielded(&mut self, mut delta: Delta) -> Delta {
+        let others = self.frames.last().map_or(Vec::new(), |frame| frame.others.clone());
         for (local, origin) in others {
-            let values = self.with_others(&self.values_in(&delta, *local), *origin);
-            delta.insert(*local, values);
+            let values = self.yielded_values(&self.values_in(&delta, local), origin);
+            delta.insert(local, values);
         }
         let fields: Vec<LocalId> =
             self.fields.iter().copied().chain(delta.keys().copied().filter(|id| self.is_path(*id))).collect();
@@ -961,14 +980,14 @@ impl<'a, 'r> Walker<'a, 'r> {
     fn called(&mut self, mut delta: Delta) -> Delta {
         let others = self.frames.last().map_or(Vec::new(), |frame| frame.others.clone());
         for (local, origin) in others {
-            let called = self.called_origin(Some(origin));
+            let called = self.ran_origin(Some(origin), Ran::Call);
             let values = with_value(&self.values_in(&delta, local), called);
             delta.insert(local, values);
         }
         let fields: Vec<LocalId> =
             self.fields.iter().copied().chain(delta.keys().copied().filter(|id| self.is_path(*id))).collect();
         if !fields.is_empty() {
-            let called = self.called_origin(None);
+            let called = self.ran_origin(None, Ran::Call);
             for field in fields {
                 let values = with_value(&self.values_in(&delta, field), called);
                 delta.insert(field, values);
@@ -977,10 +996,26 @@ impl<'a, 'r> Walker<'a, 'r> {
         delta
     }
 
+    /// `values` once a call yields, where the local may also hold any of the values that `others`, an
+    /// origin of `Walker::others`, stands for, as `with_others` takes them: with nothing known about
+    /// them, or with what all the guards before the call tell about what the local held there.
+    fn yielded_values(&mut self, values: &Values, others: u32) -> Values {
+        let guarded = values.iter().filter(|value| matches!(self.flow.ran.get(&value.origin), None | Some(Ran::Kept)));
+        let held = guarded.map(|value| value.facts.clone()).reduce(|a, b| shared(&a, &b));
+        let (fresh, kept) = (self.ran_origin(Some(others), Ran::Yield), self.ran_origin(Some(others), Ran::Kept));
+        let given = [
+            Version { origin: fresh, facts: FactList::default() },
+            Version { origin: kept, facts: held.unwrap_or_default() },
+        ];
+        let left = self.with_others(values, others);
+        let stays = |value: &&Version| ![others, fresh, kept].contains(&value.origin);
+        left.iter().filter(stays).cloned().chain(given).collect()
+    }
+
     /// The origin that stands for the values of the set of `Origin::Others` of `others`, or for a
-    /// field without, once a call that runs the code that gives them ends.
-    fn called_origin(&mut self, others: Option<u32>) -> u32 {
-        if let Some(origin) = self.called.get(&others) {
+    /// field without, once a call that runs the code that gives them, as `ran` tells, ends.
+    fn ran_origin(&mut self, others: Option<u32>, ran: Ran) -> u32 {
+        if let Some(origin) = self.ran.get(&(others, ran)) {
             return *origin;
         }
         let set = match others.map(|others| self.flow.origin(others)) {
@@ -992,8 +1027,8 @@ impl<'a, 'r> Walker<'a, 'r> {
         };
         let origin = self.flow.origins.len() as u32;
         self.flow.origins.push(Origin::Others(set));
-        self.flow.called.insert(origin);
-        self.called.insert(others, origin);
+        self.flow.ran.insert(origin, ran);
+        self.ran.insert((others, ran), origin);
         origin
     }
 

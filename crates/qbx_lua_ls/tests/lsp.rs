@@ -2857,13 +2857,80 @@ end
     let finding = |needle: &str, message: &str| {
         ("need-check-nil".to_string(), pos(text, needle, 0).0 as u64, message.to_string())
     };
+    let relaxed = findings(&mut client, CLIENT, &["need-check-nil"]);
     assert_eq!(
-        findings(&mut client, CLIENT, &["need-check-nil"]),
+        relaxed,
+        [finding("other[1]", "`other` may be nil: its type here is `table?`")],
+        "`SetTimeout` runs its function once the code yields, while `pcall` runs it right away, and as in \
+         lua-language-server, the guard on `buffer` holds after `Wait(0)`"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        added(&relaxed, &findings(&mut client, CLIENT, &["need-check-nil"])),
+        [finding("buffer[2]", "`buffer` may be nil: its type here is `table?`")],
+        "with `strict`, the function may run while `Wait(0)` yields"
+    );
+}
+
+#[test]
+fn guards_on_typed_locals_that_handlers_clear_hold_across_a_yield_unless_strict() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Probe.Zone
+---@field name string
+
+---@type Probe.Zone?
+local currentZone
+---@type integer?
+local currentVehicle
+
+RegisterNetEvent('probe:left', function()
+    currentZone = nil
+    currentVehicle = nil
+end)
+
+function UseZone()
+    if not currentZone then return end
+    Wait(500)
+    Wait(500)
+    print(currentZone.name) -- guarded
+end
+
+function UseVehicle()
+    if not currentVehicle then return end
+    Wait(0)
+    SetVehicleEngineOn(currentVehicle, true, true, false)
+end
+
+function Unguarded()
+    Wait(0)
+    print(currentZone.name) -- unguarded
+end
+";
+    client.open_with(CLIENT, text);
+    let line = |needle: &str| pos(text, needle, 0).0 as u64;
+    let finding = |code: &str, needle: &str, message: &str| (code.to_string(), line(needle), message.to_string());
+    let codes = ["need-check-nil", "param-type-mismatch"];
+    let nil = "`currentZone` may be nil: its type here is `Probe.Zone?`";
+    let relaxed = findings(&mut client, CLIENT, &codes);
+    assert_eq!(
+        relaxed,
+        [finding("need-check-nil", "currentZone.name) -- unguarded", nil)],
+        "as in lua-language-server, a guard before `Wait` still holds after it, also for a local with a \
+         `---@type`, while an unguarded read is reported"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        added(&relaxed, &findings(&mut client, CLIENT, &codes)),
         [
-            finding("other[1]", "`other` may be nil: its type here is `table?`"),
-            finding("buffer[2]", "`buffer` may be nil: its type here is `table?`"),
+            finding("need-check-nil", "currentZone.name) -- guarded", nil),
+            finding(
+                "param-type-mismatch",
+                "SetVehicleEngineOn",
+                "Cannot assign `integer?` to parameter `vehicle` of type `Vehicle`"
+            ),
         ],
-        "`SetTimeout` runs its function once the code yields, while `pcall` runs it right away"
+        "with `strict`, the handler may clear them while `Wait` yields"
     );
 }
 
