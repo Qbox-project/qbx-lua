@@ -1337,6 +1337,40 @@ onShop('closed', function(closedShop) end)
 }
 
 #[test]
+fn overloads_that_type_an_argument_win_over_a_signature_that_does_not() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Test.HashedVehicle
+---@field model string
+
+---@type table<number, Test.HashedVehicle>
+local byHash = {}
+
+---@return table<number, Test.HashedVehicle>
+---@overload fun(key: number): Test.HashedVehicle
+local function vehiclesByHash(key)
+    return byHash[key] or byHash
+end
+
+local one = vehiclesByHash(5)
+local all = vehiclesByHash()
+print(vehiclesByHash(5).model, one.model, all[1].model)
+";
+    client.open_with(CLIENT, text);
+    for (needle, expected) in [("one", "one: Test.HashedVehicle"), ("all", "all: table<number, Test.HashedVehicle>")] {
+        let (l, c) = pos(text, needle, 0);
+        let hover = client.hover_text(CLIENT, l, c);
+        assert!(hover.contains(expected), "{needle}: expected {expected:?} in {hover}");
+    }
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field"]),
+        [],
+        "`fun(key: number)` types the number that `function vehiclesByHash(key)` leaves untyped, as qbx_core's \
+         `GetVehiclesByHash` is called"
+    );
+}
+
+#[test]
 fn methods_holding_a_class_call_its_overload() {
     let mut client = Client::start(fixture_root());
     // ox_lib's `lib.array:new()` calls the `ArrayConstructor` that its `new` field holds.

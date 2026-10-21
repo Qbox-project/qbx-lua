@@ -51,10 +51,12 @@ enum Fit {
 
 /// The literal arguments a parameter lists, and of those the ones it takes alone: `"keyPressed"`
 /// is listed by `"keyPressed"|"keyReleased"|string` too, but only `action: "keyPressed"` pins it.
+/// Then the arguments of a known kind whose parameter declares the kinds it takes.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct Literals {
     listed: usize,
     pinned: usize,
+    typed: usize,
 }
 
 /// The arguments of one call, each inferred at most once while its signature is chosen and its
@@ -3480,9 +3482,11 @@ impl<'a> Infer<'a> {
     /// The signature a call uses: the declared one, or else the `@overload` that fits best, so
     /// `fun(x, y, z): vector3` wins over a `vec(...)` that only takes three values through `...`, and
     /// `fun(action: "keyPressed")` wins over `fun(action: string)` for `"keyPressed"`, as well as over
-    /// an `action: Actions` whose alias lists `"keyPressed"` among others. Ties go to the declared
-    /// signature, then to the earliest overload. An `@overload (server)` only counts for a call at
-    /// `at` that runs on the server.
+    /// an `action: Actions` whose alias lists `"keyPressed"` among others. Then one whose parameters
+    /// declare the kinds of more arguments wins, as `fun(key: number)` does for a number over a
+    /// `function GetVehiclesByHash(key)` without `@param`. Ties go to the declared signature, then
+    /// to the earliest overload. An `@overload (server)` only counts for a call at `at` that runs on
+    /// the server.
     fn signature_for(&self, fun: &Arc<FunType>, args: &CallArgs, via_method: bool, at: u32) -> Arc<FunType> {
         if fun.overloads.is_empty() {
             return fun.clone();
@@ -3645,6 +3649,7 @@ impl<'a> Infer<'a> {
                 if wanted & given_kinds == 0 {
                     return Fit::No;
                 }
+                literals.typed += 1;
             }
             let Some(given) = given else { continue };
             match self.literal_fit(fun, &param.ty, given, 0) {
