@@ -1054,9 +1054,14 @@ impl<'a> TypeParser<'a> {
                 while self.pos < self.src.len() && self.peek() != quote {
                     self.pos += 1;
                 }
-                let value = SmolStr::new(&self.src[start..self.pos]);
+                let text = &self.src[start..self.pos];
+                // LuaLS reads `'"left"'`, as older annotations write a literal, as `"left"`.
+                let value = match text.as_bytes() {
+                    [first @ (b'"' | b'\''), .., last] if first == last => &text[1..text.len() - 1],
+                    _ => text,
+                };
                 self.pos = (self.pos + 1).min(self.src.len());
-                Type::StringLit(value)
+                Type::StringLit(SmolStr::new(value))
             }
             b'`' => {
                 self.pos += 1;
@@ -1269,6 +1274,14 @@ mod tests {
         assert_eq!(roundtrip("OxPlayer?"), "OxPlayer?");
         assert_eq!(roundtrip("1|2|3"), "1|2|3");
         assert_eq!(roundtrip("any|string"), "any");
+    }
+
+    #[test]
+    fn quoted_literals_inside_quotes_read_as_the_inner_literal() {
+        assert_eq!(roundtrip("'\"left\"'|'\"right\"'"), "\"left\"|\"right\"");
+        assert_eq!(roundtrip("\"'up'\""), "\"up\"");
+        assert_eq!(roundtrip("'\"'"), "\"\"\"");
+        assert_eq!(roundtrip("'\"mixed'"), "\"\"mixed\"");
     }
 
     #[test]
