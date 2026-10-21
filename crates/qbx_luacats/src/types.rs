@@ -858,11 +858,13 @@ pub struct TypeParser<'a> {
     depth: u32,
     /// Class and alias names with their byte offsets, collected only by `parse_names`.
     names: Option<Vec<(usize, &'a str)>>,
+    /// In the values a function type returns, which may each be named, as `ok` of `fun(): ok: boolean`.
+    in_returns: bool,
 }
 
 impl<'a> TypeParser<'a> {
     pub fn new(src: &'a str) -> Self {
-        Self { src, pos: 0, depth: 0, names: None }
+        Self { src, pos: 0, depth: 0, names: None, in_returns: false }
     }
 
     /// Parses a type and returns the class and alias names in it with their byte offsets, leaving
@@ -1023,6 +1025,9 @@ impl<'a> TypeParser<'a> {
     }
 
     fn postfix(&mut self) -> Type {
+        if self.in_returns {
+            self.skip_return_name();
+        }
         let start = self.pos;
         let mut ty = self.primary();
         loop {
@@ -1151,6 +1156,7 @@ impl<'a> TypeParser<'a> {
     }
 
     fn fun(&mut self) -> Type {
+        let in_returns = std::mem::replace(&mut self.in_returns, false);
         self.pos += 1;
         let mut params = Vec::new();
         loop {
@@ -1172,6 +1178,7 @@ impl<'a> TypeParser<'a> {
             self.eat(b',');
         }
         let mut return_sets = Vec::new();
+        self.in_returns = true;
         let returns = match self.eat(b':') {
             true => match self.parse_return_sets() {
                 Some(sets) => {
@@ -1182,7 +1189,16 @@ impl<'a> TypeParser<'a> {
             },
             false => Vec::new(),
         };
+        self.in_returns = in_returns;
         Type::Fun(Arc::new(FunType { params, returns, return_sets, ..FunType::default() }))
+    }
+
+    /// Steps over the name of a value a function type returns, as `ok` of `fun(): ok: boolean`.
+    fn skip_return_name(&mut self) {
+        let start = self.pos;
+        if self.ident().is_none() || !self.eat(b':') {
+            self.pos = start;
+        }
     }
 
     fn parse_return_list(&mut self) -> Vec<Type> {
@@ -1294,6 +1310,18 @@ mod tests {
         let mut parser = TypeParser::new("string|number the value to use");
         assert_eq!(parser.parse().to_string(), "string|number");
         assert_eq!(parser.rest().trim(), "the value to use");
+    }
+
+    #[test]
+    fn function_types_may_name_the_values_they_return() {
+        assert_eq!(roundtrip("fun(): ok: boolean, err: string?"), "fun(): boolean, string?");
+        assert_eq!(roundtrip("fun(x: number): (r: number)"), "fun(x: number): number");
+        assert_eq!(roundtrip("fun(): (ok: boolean, err: string)"), "fun(): (boolean, string)");
+        assert_eq!(roundtrip("fun(): ok: fun(a: string): b: integer"), "fun(): fun(a: string): integer");
+        assert_eq!(roundtrip("fun(cb: fun(): x: string)"), "fun(cb: fun(): string)");
+        let mut parser = TypeParser::new("fun(): ok: Result, err: string the description");
+        assert_eq!(parser.parse_names(), [(11, "Result")]);
+        assert_eq!(parser.rest().trim(), "the description");
     }
 
     #[test]
