@@ -39,11 +39,6 @@ function assert(v, message, ...) end
 ---@return any result
 function collectgarbage(opt, ...) end
 
----Runs the given file as a Lua chunk (stdin when omitted) and returns whatever the chunk returns.
----@param filename? string
----@return any ...
-function dofile(filename) end
-
 ---Throws `message` as an error and never returns. `level` selects which call frame gets blamed (1 = caller, 0 = no position info).
 ---@param message any
 ---@param level? integer
@@ -71,14 +66,6 @@ function ipairs(t) end
 ---@return function | (nil, string)
 ---@nodiscard
 function load(chunk, chunkname, mode, env) end
-
----Like `load`, but reads the chunk from a file (stdin when omitted).
----@param filename? string
----@param mode? load_mode
----@param env? table
----@return function | (nil, string)
----@nodiscard
-function loadfile(filename, mode, env) end
 
 ---Returns the key/value pair that follows `index` in the table traversal order; pass nil to get the first pair, nil is returned after the last.
 ---@generic K, V

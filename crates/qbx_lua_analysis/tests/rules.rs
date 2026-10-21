@@ -503,6 +503,16 @@ fn server_libraries_have_the_fields_fivem_gives_them() {
 }
 
 #[test]
+fn file_loaders_that_fivem_removes_are_undefined() {
+    let undefined = |source: &str| call_messages("undefined-global", source, Some(Side::Server), &[]);
+    assert_eq!(
+        undefined("dofile('config.lua')\nprint(loadfile('config.lua'))"),
+        ["undefined global 'dofile'", "undefined global 'loadfile'"]
+    );
+    assert_eq!(undefined("print(load('return 1'), require('config'))"), Vec::<String>::new());
+}
+
+#[test]
 fn exports_are_checked_against_their_definition() {
     let other = (Some(Side::Server), "local function getPlayer(id) return id end\nexports('GetPlayer', getPlayer)");
     assert_eq!(project("print(exports.other:GetPlayer(1))", Side::Server, &[other]), Vec::<&str>::new());
