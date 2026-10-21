@@ -3189,8 +3189,7 @@ impl<'a> Infer<'a> {
                     return only(ty, false);
                 }
                 (Some("tostring"), _) => return only(Type::String, true),
-                // `tonumber(n)` gives back a number it is given, and `nil` only for another value
-                // or with a base, which it reads a string in.
+                // `tonumber(n)` gives back a number it is given, and `nil` only for another value.
                 (Some("tonumber"), Some(arg)) if args.len() == 1 => {
                     let ty = match self.expr(arg).widen() {
                         ty @ (Type::Number | Type::Integer) => ty,
@@ -3198,7 +3197,6 @@ impl<'a> Infer<'a> {
                     };
                     return only(ty, true);
                 }
-                (Some("tonumber"), _) => return only(Type::Number.optional(), true),
                 _ => {}
             }
         }

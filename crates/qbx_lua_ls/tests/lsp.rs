@@ -6399,7 +6399,8 @@ local function convert(x, i, s)
     local fromInteger = tonumber(i)
     local fromString = tonumber(s)
     local withBase = tonumber(x, 16)
-    return fromNumber, fromInteger, fromString, withBase
+    local hex = tonumber(s, 16)
+    return fromNumber, fromInteger, fromString, withBase, hex
 end
 return convert
 ";
@@ -6409,6 +6410,7 @@ return convert
         ("fromInteger =", "fromInteger: integer\n"),
         ("fromString =", "fromString: number?\n"),
         ("withBase =", "withBase: number?\n"),
+        ("hex =", "hex: integer\n"),
     ] {
         let (l, c) = pos(text, needle, 0);
         let hover = client.hover_text(CLIENT, l, c);

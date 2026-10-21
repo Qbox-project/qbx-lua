@@ -178,10 +178,10 @@ function setmetatable(t, metatable) end
 
 ---Converts a value to a number, or returns nil if it cannot be converted. With `base` (2-36) the argument must be a string holding an integer in that base.
 ---@param e any
----@param base? integer
 ---@return number? value
+---@overload fun(e: string, base: integer): integer
 ---@nodiscard
-function tonumber(e, base) end
+function tonumber(e) end
 
 ---Converts any value to a human-readable string, honouring `__tostring` and `__name`.
 ---@param v any
