@@ -1853,11 +1853,15 @@ impl<'a> Infer<'a> {
     /// parameter of the call it is passed to, the `---@type` of the statement it is the value of,
     /// or the field of a typed table it is written in. A value it returns whose type names a
     /// generic of the callee or of the type itself is `any`, as only the arguments of a call bind
-    /// those, which declares nothing. `None` when nothing declares one, or when the call fits
-    /// several signatures, which may take different functions.
+    /// those, which declares nothing. `None` when nothing declares one, when the call fits several
+    /// signatures, which may take different functions, or when the `@return` of the function that
+    /// returns it names a generic of that function, which lua-language-server leaves unchecked.
     pub fn declared_fun_type(&self, func: &FuncBody) -> Option<Arc<FunType>> {
         let expected = self.ctx.functions.get(&func.params_span.start)?;
         let (ty, callee_generics) = match *expected {
+            Expected::Return { doc_anchor: Some(anchor), index, .. } if self.returns_generic(anchor, index) => {
+                return None;
+            }
             Expected::Arg { call, arg_index } if self.builtin_event_handler(call, arg_index).is_some() => {
                 (self.expected_type(expected)?, Vec::new())
             }
@@ -1921,6 +1925,14 @@ impl<'a> Infer<'a> {
             }
             _ => None,
         }
+    }
+
+    /// Whether the `@return` at `index` of the doc comment at `anchor` names one of its `@generic`s.
+    fn returns_generic(&self, anchor: u32, index: usize) -> bool {
+        let doc = self.ctx.doc_at(anchor);
+        let Some(returned) = doc.returns.get(index) else { return false };
+        let generics = FunType { generics: doc.generics.clone(), ..FunType::default() };
+        self.names_generic(&generics, &returned.ty, 0)
     }
 
     /// Whether `ty` names one of the generics of `fun`.

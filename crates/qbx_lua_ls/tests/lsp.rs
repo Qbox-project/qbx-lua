@@ -9471,6 +9471,47 @@ return maxDrawable, maxTexture, labelled, untyped
 }
 
 #[test]
+fn returned_functions_are_not_checked_against_a_return_that_names_a_generic() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@generic T
+---@param start T
+---@return fun(): T, number
+local function lerp(start)
+    local step
+    return function()
+        if step == 1 then return end
+        step = 1
+        return start, step
+    end
+end
+
+---@generic T
+---@param start T
+---@return fun(): number, number
+local function count(start)
+    return function()
+        if start then return end
+        return 1, 2
+    end
+end
+return lerp, count
+";
+    client.open_with(CLIENT, text);
+    let line = pos(text, "if start then return", 0).0 as u64;
+    assert_eq!(
+        findings(&mut client, CLIENT, &["missing-return"]),
+        [(
+            "missing-return".to_string(),
+            line,
+            "Its function type requires 2 values, but this returns no values".to_string()
+        )],
+        "as in lua-language-server, a `@return` that names a generic of its function does not type the function \
+         literal it returns, as ox_lib's `math.lerp` stops its iterator, while one that names none does"
+    );
+}
+
+#[test]
 fn keys_read_the_fields_that_the_literals_they_may_hold_name() {
     let mut client = Client::start(fixture_root());
     let text = "\

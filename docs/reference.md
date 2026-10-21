@@ -844,7 +844,9 @@ lua-language-server: the `fun(n: integer): string` of the parameter it is passed
 in. A `fun()` that lists no values takes none, so `return true` in a handler passed for
 `fun(...: any)` is a `redundant-return-value`. A value whose type names a generic of the callee
 or of the function type is not checked, since only the arguments of a call bind it, and nothing
-is checked when the call fits several signatures or the type lists several function types.
+is checked when the call fits several signatures, the type lists several function types, or it is
+the `@return` of the function that returns it and names a generic of that function, as the
+`fun(): T, number` of ox_lib's `math.lerp` does.
 
 ```lua
 ---@param cb fun(n: integer): string
