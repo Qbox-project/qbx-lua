@@ -895,6 +895,11 @@ impl<'a> TypeParser<'a> {
         }
     }
 
+    /// Steps over the character the parser is at, which starts no part of the type.
+    fn skip_char(&mut self) {
+        self.pos += self.rest().chars().next().map_or(1, char::len_utf8);
+    }
+
     fn eat(&mut self, c: u8) -> bool {
         self.skip_ws();
         if self.peek() == c {
@@ -1162,7 +1167,7 @@ impl<'a> TypeParser<'a> {
                 let ty = if self.eat(b':') { self.parse() } else { Type::Unknown };
                 params.push(Param { name: SmolStr::new(name), ty, optional, ..Param::default() });
             } else {
-                self.pos += 1;
+                self.skip_char();
             }
             self.eat(b',');
         }
@@ -1220,7 +1225,7 @@ impl<'a> TypeParser<'a> {
                 let ty = if self.eat(b':') { self.parse() } else { Type::Unknown };
                 shape.fields.push(ShapeField { name: SmolStr::new(name), ty, optional });
             } else {
-                self.pos += 1;
+                self.skip_char();
             }
             if !self.eat(b',') {
                 self.eat(b';');
@@ -1320,6 +1325,13 @@ mod tests {
         ] {
             let _ = parse_type(text);
         }
+    }
+
+    #[test]
+    fn characters_outside_ascii_in_lists_are_skipped_whole() {
+        assert_eq!(roundtrip("fun(é: string)"), "fun(string)");
+        assert_eq!(roundtrip("fun(a: string, —, b: number): boolean"), "fun(a: string, b: number): boolean");
+        assert_eq!(roundtrip("{ ü: string, a: number }"), "{ string: unknown, a: number }");
     }
 
     #[test]
