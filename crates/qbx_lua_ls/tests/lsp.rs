@@ -12542,6 +12542,28 @@ print(nano, delta, clock, trimmed, kind, entries, length)
 }
 
 #[test]
+fn standard_libraries_keep_what_imported_libraries_add_beside_the_resources_own() {
+    let mut client = Client::start(fixture_root());
+    let digits = "---@param number number\n---@return string\nfunction math.groupdigits(number)\n    return tostring(number)\nend\n";
+    client.open_with("[core]/mylib/modules/digits.lua", digits);
+    let text = "\
+---@param value number
+---@return number
+function math.roundto(value)
+    return value
+end
+print(math.groupdigits(1):upper(), math.roundto(1.5), math.floor(1.5))
+";
+    client.open_with(CLIENT, text);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field"]),
+        [],
+        "`math` is the runtime's, not the resource's, so what the library it imports adds stays when it adds \
+         its own, as with ox_lib's `lib.math` beside a `math.round` of qbx_core"
+    );
+}
+
+#[test]
 fn colon_calls_pass_their_receiver_to_functions_defined_with_a_dot() {
     let mut client = Client::start(fixture_root());
     let text = "\

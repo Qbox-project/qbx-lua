@@ -1169,13 +1169,16 @@ impl Index {
         }
         // A table the resource fills itself (`Config`, `Shared`) is its own; only tables that come
         // from an imported library (`lib`, `qbx`) are completed from that library's other files.
+        // The runtime's tables, as `math`, are no resource's own, so what a library adds to them
+        // stays when the resource adds to them too.
         let own_resource = self.file(from).and_then(|f| f.resource);
         let is_own = |target: FileId| {
             target == from || (own_resource.is_some() && self.file(target).and_then(|f| f.resource) == own_resource)
         };
+        let is_stub = |target: FileId| self.file(target).is_some_and(|f| f.origin == FileOrigin::Stub);
         let mut in_scope: Vec<Slot> = slots.iter().copied().filter(|(f, _)| self.is_visible(from, *f)).collect();
         self.prefer_own(from, &mut in_scope, |(file, _)| *file);
-        if in_scope.iter().any(|(f, _)| is_own(*f)) {
+        if in_scope.iter().any(|(f, _)| is_own(*f)) && !slots.iter().any(|(f, _)| is_stub(*f)) {
             return in_scope;
         }
         let visible: Vec<Slot> = slots.iter().copied().filter(|(f, _)| self.reaches(from, *f)).collect();
