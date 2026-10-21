@@ -33,7 +33,7 @@ pub fn circular_classes(infer: &Infer, chunk: &Chunk) -> Vec<(Span, String)> {
             let Some(path) = class
                 .parent_types
                 .iter()
-                .find_map(|parent| path_to(&classes, parent, classes.file(), &class.name, &mut visited, 0))
+                .find_map(|parent| path_to(infer, &classes, parent, classes.file(), &class.name, &mut visited, 0))
             else {
                 continue;
             };
@@ -55,7 +55,9 @@ pub fn circular_classes(infer: &Infer, chunk: &Chunk) -> Vec<(Span, String)> {
 
 /// The classes through which the class `parent`, as `from` sees it, inherits from `target`, starting
 /// with `parent` itself and empty when it is `target`, or `None` when it does not inherit from it.
+/// Like LuaLS, only parents that name a class count, not aliases of one.
 fn path_to(
+    infer: &Infer,
     classes: &Classes,
     parent: &Type,
     from: FileId,
@@ -63,16 +65,21 @@ fn path_to(
     visited: &mut FxHashSet<SmolStr>,
     depth: u32,
 ) -> Option<Vec<SmolStr>> {
-    let (name, _, view) = classes.class_of(parent, from)?;
+    let Type::Named(name, _) = parent else { return None };
+    let defs = classes.class_defs(name, infer.view_of(name, from));
+    if defs.is_empty() {
+        return None;
+    }
+    let name = name.text.clone();
     if name == target {
         return Some(Vec::new());
     }
     if depth > MAX_DEPTH || !visited.insert(name.clone()) {
         return None;
     }
-    for (file, def) in classes.class_defs(&name, view) {
+    for (file, def) in defs {
         for grandparent in &def.parent_types {
-            if let Some(mut path) = path_to(classes, grandparent, file, target, visited, depth + 1) {
+            if let Some(mut path) = path_to(infer, classes, grandparent, file, target, visited, depth + 1) {
                 path.insert(0, name);
                 return Some(path);
             }

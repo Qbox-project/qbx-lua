@@ -8069,6 +8069,25 @@ fn classes_that_inherit_from_themselves_are_reported_in_each_file() {
 }
 
 #[test]
+fn classes_extending_an_alias_of_themselves_are_no_cycle() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@alias Test.Maybe<T> T|nil
+---@class Test.Wrapper : Test.Maybe<Test.Wrapper>
+---@alias Test.Same Test.Looped
+---@class Test.Looped : Test.Same
+---@class Test.Direct : Test.Direct?
+";
+    client.open_with(CLIENT, text);
+    let found = findings(&mut client, CLIENT, &["circle-doc-class"]);
+    assert_eq!(
+        found,
+        [("circle-doc-class".to_string(), 4, "Class `Test.Direct` inherits from itself".to_string())],
+        "as in LuaLS, a parent that names an alias is followed no further"
+    );
+}
+
+#[test]
 fn casts_to_classes_the_declared_type_does_not_extend_are_reported() {
     let mut client = Client::start(fixture_root());
     let text = "\
