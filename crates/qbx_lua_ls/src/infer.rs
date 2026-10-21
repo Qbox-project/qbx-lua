@@ -2618,10 +2618,14 @@ impl<'a> Infer<'a> {
         let fields = &fields[..fields.len().min(MAX_SHAPE_FIELDS)];
         let mut shape = Shape::default();
         for field in fields {
+            let value_type = |value: &Expr| {
+                let documented = self.statement_function(value, field_start(self.ctx.source, field));
+                documented.unwrap_or_else(|| self.first_value(value)).widen()
+            };
             let (name, ty) = match field {
-                TableField::Named { name, value } => (name.text.clone(), self.first_value(value).widen()),
+                TableField::Named { name, value } => (name.text.clone(), value_type(value)),
                 TableField::Keyed { key: Expr { kind: ExprKind::String(name), .. }, value } => {
-                    (name.clone(), self.first_value(value).widen())
+                    (name.clone(), value_type(value))
                 }
                 TableField::SetMember(name) => (name.text.clone(), Type::Boolean),
                 TableField::Keyed { .. } | TableField::Positional(_) => continue,

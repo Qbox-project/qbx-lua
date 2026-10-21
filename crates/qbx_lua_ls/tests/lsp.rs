@@ -10860,6 +10860,36 @@ return {
 }
 
 #[test]
+fn tables_built_inside_functions_take_the_returns_above_their_fields() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+local function make()
+    local api = {
+        ---@return { name: string }
+        get = function() error('override me') end,
+        ---@return integer
+        ['count'] = function() error('override me') end,
+    }
+    return api
+end
+
+local api = make()
+local count = api.count()
+print(api.get().name, count)
+";
+    client.open_with(CLIENT, text);
+    let (l, c) = pos(text, "count = api", 0);
+    let hover = client.hover_text(CLIENT, l, c);
+    assert!(hover.contains("local count: integer"), "{hover}");
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field"]),
+        [],
+        "a function written in a field returns what the `@return` above the field says, also in a table that \
+         is no global, as lua-language-server reads it"
+    );
+}
+
+#[test]
 fn files_see_the_classes_they_declare_as_soon_as_they_are_indexed() {
     let mut client = Client::start(fixture_root());
     // The global table `Test{name}` of the class `Test.{name}`, with methods that return `self`.
