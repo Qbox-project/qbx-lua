@@ -469,6 +469,22 @@ fn shared_scripts_use_names_of_one_side_only_where_that_side_runs() {
         "if not IsDuplicityVersion() then\n    AddTextEntry('a', 'b')\n    print(GetEmptyBlipCategory())\nend";
     assert_eq!(wrong_side(client_code), none);
     assert_eq!(strict_wrong_side(client_code), none);
+    for source in [
+        "local ped = IsDuplicityVersion() and 0 or PlayerPedId()",
+        "local isServer = IsDuplicityVersion()\nprint(isServer and GetPlayers() or GetActivePlayers())",
+        "print((not IsDuplicityVersion() and AddTextEntry('a', 'b')) or GetPlayers())",
+        "function Now()\n    return (os and os.time() or GetCloudTimeAsInt()) * 1000\nend",
+    ] {
+        assert_eq!(strict_wrong_side(source), none, "the right side of the `or` runs on the other side: {source}");
+    }
+    assert_eq!(
+        wrong_side("local ped = IsDuplicityVersion() and nil or PlayerPedId()"),
+        ["native 'PlayerPedId' is client-only, but this shared script also runs on the server"]
+    );
+    assert_eq!(
+        wrong_side("local sent = IsDuplicityVersion() and 0 or TriggerClientEvent('a', -1)"),
+        ["'TriggerClientEvent' only exists on the server, but this is code that only runs on the client"]
+    );
     assert_eq!(
         wrong_side("if IsDuplicityVersion() then\n    print(GetEmptyBlipCategory())\nend"),
         ["'GetEmptyBlipCategory' is only defined by client scripts of this resource, but this is code that only runs on the server"]

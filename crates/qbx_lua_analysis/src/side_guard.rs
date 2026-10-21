@@ -10,7 +10,8 @@ use crate::env::builtins;
 /// the branches of `if IsDuplicityVersion() then ... else ... end`, of `lib.context == 'server'`,
 /// of `if os then`, which only the server opens, or of a local that holds the context as ox_lib's
 /// `IsDuplicityVersion() and 'server' or 'client'` does, the code after `if not
-/// IsDuplicityVersion() then return end`, and the right side of `IsDuplicityVersion() and ...`.
+/// IsDuplicityVersion() then return end`, the right side of `IsDuplicityVersion() and ...`, and the
+/// `B` of `IsDuplicityVersion() and A or B`, which runs on the client.
 #[derive(Debug, Default)]
 pub struct SideRegions {
     regions: Vec<(Span, Side)>,
@@ -147,6 +148,19 @@ fn side_when_true(cond: &Expr, names: &Names) -> Option<(Side, bool)> {
     }
 }
 
+/// The side that runs the `B` of `cond and A or B`, given its `cond and A`: the one where `cond` is
+/// false, when it is false everywhere on that side and `A` is not written as `nil` or `false`.
+fn fallback_side(lhs: &Expr, names: &Names) -> Option<Side> {
+    let ExprKind::Binary { op: BinOp::And, lhs: cond, rhs: then, .. } = &lhs.unparen().kind else { return None };
+    if matches!(then.unparen().kind, ExprKind::Nil | ExprKind::False) {
+        return None;
+    }
+    match side_when_true(cond, names)? {
+        (side, true) => Some(other(side)),
+        _ => None,
+    }
+}
+
 /// Names such as `local isServer = IsDuplicityVersion()`, and those that hold the name of the side,
 /// as `local context = IsDuplicityVersion() and 'server' or 'client'` does.
 #[derive(Default)]
@@ -252,12 +266,20 @@ impl<'ast> Visitor<'ast> for Finder {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        // The right side of `isServer and os.time()` only runs where the left side is true.
-        if let ExprKind::Binary { op: BinOp::And, lhs, rhs, .. } = &expr.kind {
-            self.tested_libraries(lhs);
-            if let Some((side, _)) = side_when_true(lhs, &self.names) {
-                self.regions.push((rhs.span, side));
+        match &expr.kind {
+            // The right side of `isServer and os.time()` only runs where the left side is true.
+            ExprKind::Binary { op: BinOp::And, lhs, rhs, .. } => {
+                self.tested_libraries(lhs);
+                if let Some((side, _)) = side_when_true(lhs, &self.names) {
+                    self.regions.push((rhs.span, side));
+                }
             }
+            ExprKind::Binary { op: BinOp::Or, lhs, rhs, .. } => {
+                if let Some(side) = fallback_side(lhs, &self.names) {
+                    self.regions.push((rhs.span, side));
+                }
+            }
+            _ => {}
         }
         visit::walk_expr(self, expr);
     }

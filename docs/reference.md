@@ -243,8 +243,9 @@ library only the server has, as `if os then`, and a local that holds the name of
 ox_lib's `local context = IsDuplicityVersion() and 'server' or 'client'` does, compared with
 `'server'` or `'client'`.
 An early return such as `if not IsDuplicityVersion() then return end` narrows the following code
-to the server, and `isServer and os.time()` narrows the right side of the `and`. Event
-registrations inside these regions use that effective side.
+to the server, `isServer and os.time()` narrows the right side of the `and`, and
+`isServer and 0 or PlayerPedId()` the right side of the `or` to the client, unless the value between
+them is a literal `nil` or `false`. Event registrations inside these regions use that effective side.
 
 FiveM only loads the `io` and `os` libraries on the server, so ox_lib tests for one, as in
 `os and os.time() or GetCloudTimeAsInt()`, to tell the side. Scripts whose side is unknown are not
