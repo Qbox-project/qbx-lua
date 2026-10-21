@@ -7610,6 +7610,35 @@ contains(names, 1)
 }
 
 #[test]
+fn table_remove_gives_an_entry_of_the_list_without_nil() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Probe.Job
+---@field name string
+
+---@param jobs Probe.Job[]
+local function drain(jobs)
+    while #jobs > 0 do
+        local job = table.remove(jobs, 1)
+        print(job.name)
+    end
+    local queue = { { x = 1 } }
+    local cell = table.remove(queue)
+    print(cell.x)
+end
+return drain
+";
+    client.open_with(CLIENT, text);
+    let hover = client.hover_text(CLIENT, 6, 14);
+    assert!(hover.contains("job: Probe.Job") && !hover.contains("Probe.Job?"), "{hover}");
+    assert_eq!(
+        findings(&mut client, CLIENT, &["need-check-nil", "undefined-field"]),
+        [],
+        "`table.remove` gives an entry of the list, as lua-language-server does, not one that may be nil"
+    );
+}
+
+#[test]
 fn strict_classes_take_only_the_keys_a_literal_index_lists() {
     let mut client = Client::start(fixture_root());
     let text = "\

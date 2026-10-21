@@ -858,7 +858,7 @@ function table.pack(...) end
 ---@generic T
 ---@param list T[]
 ---@param pos? integer
----@return T? removed
+---@return T removed
 function table.remove(list, pos) end
 
 ---Sorts the list in place. `comp(a, b)` must return true when `a` has to come before `b`; defaults to `<`. The sort is not stable.
