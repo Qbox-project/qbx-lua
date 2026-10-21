@@ -150,6 +150,16 @@ pub fn entries<'c>(infer: &Infer, fields: &'c [TableField]) -> Vec<(Key<'c>, Spa
         .collect()
 }
 
+/// Whether `expr` is a global, or a field or key read through one, as `Config.Sub` is.
+/// lua-language-server checks no value stored there.
+fn from_global(infer: &Infer, expr: &Expr) -> bool {
+    match &expr.unparen().kind {
+        ExprKind::Name(name) => matches!(infer.ctx.resolution.resolve_at(name.span.start), Some(Resolved::Global(_))),
+        ExprKind::Field { base, .. } | ExprKind::Index { base, .. } => from_global(infer, base),
+        _ => false,
+    }
+}
+
 fn is_table(expr: &Expr) -> bool {
     matches!(expr.unparen().kind, ExprKind::Table(_))
 }
@@ -1185,6 +1195,9 @@ fn checked_fields(infer: &Infer, chunk: &Chunk, unknowns: Option<&dyn Fn(&Expr) 
             continue;
         }
         let Some(value) = access.value else { continue };
+        if unknowns.is_none() && !infer.strict() && access.base.is_some_and(|base| from_global(infer, base)) {
+            continue;
+        }
         // As lua-language-server reads it, a value stored under a key in brackets, as
         // `list[i] = value` or `slots[1] = value`, may be `nil`, which removes the entry, while one
         // stored in a named field, as `value.name`, may not. With `strict`, a value that may be `nil`
@@ -1350,9 +1363,15 @@ impl<'a, 'b, 'c> Finder<'a, 'b, 'c> {
     /// The type that an assignment to `target` without a `---@type` gives a table: that of a
     /// class the target holds, or else, when tables of other types are looked for, the type it is
     /// declared with, as its own `---@type` or `@param` declares it. What the target was assigned
-    /// before only tells what it held then.
+    /// before only tells what it held then. Without `strict`, as lua-language-server reads it, the
+    /// checks give a table assigned to a global no type, while completion still offers its fields.
     fn assigned_type(&self, target: &Expr) -> Type {
-        let ty = self.classes.infer.target_type(target);
+        let infer = self.classes.infer;
+        let names_global = matches!(target.kind, ExprKind::Name(_)) && from_global(infer, target);
+        if self.declared.is_some() && !infer.strict() && names_global {
+            return Type::Unknown;
+        }
+        let ty = infer.target_type(target);
         if self.classes.class_of(&ty, self.classes.file()).is_some() {
             return ty;
         }

@@ -360,6 +360,9 @@ With `strict`:
 - `missing-fields` requires the fields of shapes, such as `{ name: string }` and the aliases of
   them, and of classes given type arguments, such as `List<string>`. See
   [Typed variables](#typed-variables).
+- `missing-fields` and `assign-type-mismatch` check a table assigned to a global without a
+  `---@type` of its own, as `PlayerData = {}` for a `PlayerData` an annotation types elsewhere, and
+  a value stored through a global, as `Config.Debug = 1`, which lua-language-server leaves out.
 - `inject-field` and `undefined-field` check tables whose type no annotation declares. A table that
   a constructor with fields builds has those alone, at the top of a file as inside a function, so
   a field set through its local later, or through a loop variable over such tables, is an
@@ -928,6 +931,8 @@ generic ones such as `Box<string>` for `---@alias Box<T> { value: T }` included,
 as an argument, as a returned value, and in the fields of another typed table, also for the class
 tables a shape holds. An assignment without a `---@type` checks a table against the type its
 target is declared with, not one inferred from what the target held before. As in
+lua-language-server, a global takes any table there, and the values stored through it, as
+`Config.Debug = 1`, are not checked, unless [`strict`](#strict-mode) is set. As in
 lua-language-server, such a table may set fields its type does not name, and the entries of a table
 typed as a union are not checked.
 

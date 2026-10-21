@@ -4810,6 +4810,53 @@ TestConfig = {}
 }
 
 #[test]
+fn tables_assigned_through_globals_are_checked_only_with_strict() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Test.Session
+---@field job string
+---@field money integer
+
+---@type Test.Session
+TestSession = { job = 'none', money = 0 }
+
+---@class Test.Settings
+---@field Debug boolean
+TestSettings = {}
+
+local function reset()
+    TestSession = {}
+    TestSettings.Debug = 1
+end
+
+---@type Test.Session
+local session = { job = 'none', money = 0 }
+session = {}
+return reset
+";
+    client.open_with(CLIENT, text);
+    let line = |needle: &str| pos(text, needle, 0).0 as u64;
+    let finding = |code: &str, needle: &str, message: &str| (code.to_string(), line(needle), message.to_string());
+    let (missing, assigned) = ("missing-fields", "assign-type-mismatch");
+    let required = "Missing required fields in type `Test.Session`: `job`, `money`";
+    assert_eq!(
+        findings(&mut client, CLIENT, &[missing, assigned]),
+        [finding(missing, "session = {}", required)],
+        "as in lua-language-server, a global takes any table and any value stored through it"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        findings(&mut client, CLIENT, &[missing, assigned]),
+        [
+            finding(missing, "TestSession = {}", required),
+            finding(assigned, "Debug = 1", "Cannot assign `integer` to field `Debug` of type `boolean`"),
+            finding(missing, "session = {}", required),
+        ],
+        "with `strict`, as in TypeScript, a global keeps the type an annotation declares"
+    );
+}
+
+#[test]
 fn missing_fields_of_partial_classes_leave_out_inherited_fields() {
     let mut client = Client::start(fixture_root());
     const SHARED: &str = "myresource/shared/config.lua";
@@ -15419,6 +15466,7 @@ fn globals_take_their_nearest_definition() {
     assert_eq!(found, [], "a file that sets the global itself does not take another file's definition");
 
     client.open("wrapper/client/detect/menu.lua");
+    client.set_strict(true);
     let found = findings(&mut client, "wrapper/client/detect/menu.lua", &["assign-type-mismatch"]);
     assert_eq!(found.len(), 1, "the declared class wins over a nearer `Config = Config or {{}}`: {found:?}");
 }
