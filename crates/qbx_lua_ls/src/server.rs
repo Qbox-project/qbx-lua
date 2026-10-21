@@ -100,9 +100,11 @@ pub struct Server {
     /// Closed files to re-lint besides those of `stale_resources`.
     stale_files: FxHashSet<crate::index::FileId>,
     /// What open documents declare differently than when the files that read it were indexed.
-    /// Those files follow once a document is saved or closed, rather than on every edit.
+    /// Those files follow once a document is saved or closed, or a file changes on disk, rather than
+    /// on every edit.
     pending: Changes,
-    /// A document was saved or closed since the readers of `pending` were last indexed.
+    /// A document was saved or closed, or a file changed on disk, since the readers of `pending` were
+    /// last indexed.
     sync_readers: bool,
     next_request_id: i32,
 }
@@ -367,7 +369,8 @@ impl Server {
     }
 
     /// Open documents are reparsed on every edit but only reindexed once something needs the index.
-    /// The files that read what they declare follow once one of them is saved or closed.
+    /// The files that read what they declare follow once one of them is saved or closed, or a file
+    /// changes on disk.
     fn flush_index(&mut self) {
         self.index_dirty();
         for _ in 0..MAX_INDEX_PASSES {
@@ -719,6 +722,7 @@ impl Server {
         self.ws.refresh_readers(stale, &self.open_files(), MAX_INDEX_PASSES);
         self.workspace_stale = true;
         self.dirty.extend(self.docs.keys().cloned());
+        self.sync_readers = true;
     }
 
     fn handle_request(&mut self, request: Request) -> Response {

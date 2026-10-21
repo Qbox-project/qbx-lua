@@ -598,6 +598,27 @@ fn closed_files_follow_what_they_declare_themselves_once_changed_on_disk() {
     assert_eq!(hover(&mut client, &query, text, "Value"), "(global) Value: string");
 }
 
+#[test]
+fn closed_files_follow_open_documents_that_follow_a_change_on_disk() {
+    let fixture = Fixture::new();
+    fixture.write("demo/fxmanifest.lua", "shared_script '*.lua'\n");
+    fixture.write("demo/a.lua", "First = 1\n");
+    fixture.write("demo/b.lua", "Second = First\n");
+    fixture.write("demo/c.lua", "Third = Second\n");
+    fixture.write("demo/query.lua", "");
+    let mut client = Client::start(&fixture.0);
+    client.open(&path_to_uri(&fixture.0.join("demo/b.lua")), "Second = First\n");
+    let query = path_to_uri(&fixture.0.join("demo/query.lua"));
+    let text = "print(Third)\n";
+    client.open(&query, text);
+    assert_eq!(hover(&mut client, &query, text, "Third"), "(global) Third: integer");
+
+    fixture.write("demo/a.lua", "First = ''\n");
+    let changed = path_to_uri(&fixture.0.join("demo/a.lua"));
+    client.notify("workspace/didChangeWatchedFiles", json!({"changes": [{"uri": changed, "type": 2}]}));
+    assert_eq!(hover(&mut client, &query, text, "Third"), "(global) Third: string");
+}
+
 /// The first line `textDocument/hover` shows for the `needle` in `text` of `uri`.
 fn hover(client: &mut Client, uri: &Url, text: &str, needle: &str) -> String {
     let offset = text.find(needle).unwrap();
