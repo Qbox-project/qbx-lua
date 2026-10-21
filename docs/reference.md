@@ -705,7 +705,9 @@ that a constructor with fields builds has those alone, such as the `{ label: str
 when none of its parts has it, and a local that is assigned again has the types of all the values
 that may reach the read. A value that is surely `nil` has no fields at all: what a call of a
 function that returns nothing gives, as a function whose body has no `return` with a value does,
-and a local declared with such a call, `nil` or no value that is never assigned again.
+and a local declared with such a call, `nil` or no value that is never assigned again. A read
+that a guard such as `if zone then` keeps from running is not checked for a local that only ever
+holds `false`, as `local zone = false` does when nothing assigns it another value.
 
 ```lua
 ---@class Point

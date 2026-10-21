@@ -5580,6 +5580,41 @@ print(Holder.current.value, readLater, logged, notified)
 }
 
 #[test]
+fn locals_that_only_hold_false_are_never_read_where_a_guard_needs_them_true() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+local zone = false
+local function cleanup()
+    if zone then zone:destroy() end
+end
+
+local cached = false
+local function reset()
+    if cached then print(cached.value) end
+    cached = false
+end
+
+local armed = false
+local function arm() armed = true end
+local function fire()
+    if armed then armed:trigger() end
+end
+return cleanup, reset, arm, fire
+";
+    client.open_with(CLIENT, text);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["undefined-field"]),
+        [(
+            "undefined-field".to_string(),
+            pos(text, "armed:trigger", 0).0 as u64,
+            "Field `trigger` is not declared in `true`".to_string()
+        )],
+        "what `if zone then` guards never runs for a local that every value reaching it leaves `false`, \
+         as in lua-language-server, while one that may hold `true` there has no fields"
+    );
+}
+
+#[test]
 fn private_protected_and_package_members_stay_in_their_class_or_file() {
     let mut client = Client::start(fixture_root());
     const SHARED: &str = "myresource/shared/config.lua";

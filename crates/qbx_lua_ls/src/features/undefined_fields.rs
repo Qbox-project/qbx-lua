@@ -8,7 +8,8 @@
 //! `value.name`, `value['name']` and `value:name()` are checked, also in conditions like
 //! `if value.name then`, and a union lacks a field when none of its parts has it. A local that is
 //! assigned again has the types of all the values that may reach the read. A value that is surely
-//! `nil`, as what a call of a function that returns nothing gives, has no fields at all, as in LuaLS.
+//! `nil`, as what a call of a function that returns nothing gives, has no fields at all, as in LuaLS,
+//! and a local that only ever holds `false` is never read where `if zone then` guards it.
 //!
 //! As in lua-language-server, a table whose type no annotation declares may have any field, as
 //! `inject-field` reads it, and so may a local without an annotation that may hold a value of
@@ -79,6 +80,9 @@ pub fn undefined_fields(infer: &Infer, chunk: &Chunk, by_default: impl Fn(FileId
             if surely_nil(infer, base) {
                 out.push((access.span, message(infer, name, &owner, access.holder)));
             }
+            continue;
+        }
+        if owner == Type::BooleanLit(true) && surely_false(infer, base) {
             continue;
         }
         let parts: Vec<&Type> = match &owner {
@@ -201,8 +205,15 @@ fn surely_nil(infer: &Infer, base: &Expr) -> bool {
     let StmtKind::Local { exprs, in_unpack: false, .. } = &stmt.kind else { return false };
     if local.refs.iter().any(|r| r.write) {
         let versions = infer.ctx.flow().at(id, name.span.start);
+        let gives_nothing = |exprs: &[Expr], index: usize| {
+            let call = match exprs.get(index) {
+                Some(value) => Some(value.unparen()),
+                None => exprs.last(),
+            };
+            call.is_some_and(|call| call.is_call() && infer.returns_nothing(call))
+        };
         return !versions.is_empty()
-            && versions.iter().all(|version| gives_nothing(infer, exprs, *index, version.origin));
+            && versions.iter().all(|version| gives(infer, exprs, *index, version.origin, &gives_nothing));
     }
     match (exprs.get(*index).map(Expr::unparen), exprs.last()) {
         (Some(value), _) if value.is_call() => infer.returns_nothing(value),
@@ -212,23 +223,38 @@ fn surely_nil(infer: &Infer, base: &Expr) -> bool {
     }
 }
 
-/// Whether the value that `origin` gives a local declared with value `index` of `declared` is what a
-/// call of a function that returns nothing gives.
-fn gives_nothing(infer: &Infer, declared: &[Expr], index: usize, origin: u32) -> bool {
+/// Whether `base` names a local that each value reaching it there gives the `false` written out,
+/// as `local zone = false` does when nothing assigns it another: what `if zone then` guards never
+/// runs, though the `boolean` the local is declared as reads as `true` there.
+fn surely_false(infer: &Infer, base: &Expr) -> bool {
+    let ExprKind::Name(name) = &base.unparen().kind else { return false };
+    let Some(Resolved::Local(id)) = infer.ctx.resolution.resolve_at(name.span.start) else { return false };
+    let local = infer.ctx.resolution.local(id);
+    let Some(Decl::Local { stmt, index }) = infer.ctx.decl(local.decl.start) else { return false };
+    let StmtKind::Local { exprs, in_unpack: false, .. } = &stmt.kind else { return false };
+    let gives_false = |exprs: &[Expr], index: usize| {
+        exprs.get(index).is_some_and(|value| matches!(value.unparen().kind, ExprKind::False))
+    };
+    if !local.refs.iter().any(|r| r.write) {
+        return gives_false(exprs, *index);
+    }
+    let versions = infer.ctx.flow().at(id, name.span.start);
+    !versions.is_empty() && versions.iter().all(|version| gives(infer, exprs, *index, version.origin, &gives_false))
+}
+
+/// Whether the value that `origin` gives a local declared with value `index` of `declared` is one
+/// that `value` accepts, given the values of the statement that stores it and its place among them.
+fn gives(infer: &Infer, declared: &[Expr], index: usize, origin: u32, value: &dyn Fn(&[Expr], usize) -> bool) -> bool {
     let flow = infer.ctx.flow();
     let (exprs, index) = match flow.origin(origin) {
         Origin::Declaration => (declared, index),
         Origin::Assignment { stmt: Stmt { kind: StmtKind::Assign { exprs, .. }, .. }, index } => (&exprs[..], index),
         Origin::Others(set) => {
-            return flow.others(set).iter().all(|other| gives_nothing(infer, declared, index, *other))
+            return flow.others(set).iter().all(|other| gives(infer, declared, index, *other, value))
         }
         _ => return false,
     };
-    let call = match exprs.get(index) {
-        Some(value) => Some(value.unparen()),
-        None => exprs.last(),
-    };
-    call.is_some_and(|call| call.is_call() && infer.returns_nothing(call))
+    value(exprs, index)
 }
 
 /// Whether a value of type `ty` is a number, a boolean or a function, which has no fields.
