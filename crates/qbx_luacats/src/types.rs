@@ -1123,7 +1123,7 @@ impl<'a> TypeParser<'a> {
         if name == "async" {
             let after = self.pos;
             self.skip_ws();
-            if self.rest().starts_with("fun(") {
+            if self.rest().starts_with("fun(") || self.rest().starts_with("fun<") {
                 return match self.named() {
                     Type::Fun(fun) => Type::Fun(Arc::new(FunType { is_async: true, ..(*fun).clone() })),
                     other => other,
@@ -1131,7 +1131,7 @@ impl<'a> TypeParser<'a> {
             }
             self.pos = after;
         }
-        if name == "fun" && self.peek() == b'(' {
+        if name == "fun" && matches!(self.peek(), b'(' | b'<') {
             return self.fun();
         }
         if let Some(names) = &mut self.names {
@@ -1157,7 +1157,9 @@ impl<'a> TypeParser<'a> {
 
     fn fun(&mut self) -> Type {
         let in_returns = std::mem::replace(&mut self.in_returns, false);
-        self.pos += 1;
+        let names_before = self.names.as_ref().map_or(0, Vec::len);
+        let generics = self.fun_generics();
+        self.eat(b'(');
         let mut params = Vec::new();
         loop {
             self.skip_ws();
@@ -1190,7 +1192,26 @@ impl<'a> TypeParser<'a> {
             false => Vec::new(),
         };
         self.in_returns = in_returns;
-        Type::Fun(Arc::new(FunType { params, returns, return_sets, ..FunType::default() }))
+        if let Some(names) = &mut self.names {
+            let found = names.split_off(names_before);
+            names.extend(found.into_iter().filter(|(_, name)| !generics.iter().any(|generic| generic == name)));
+        }
+        Type::Fun(Arc::new(FunType { params, returns, return_sets, generics, ..FunType::default() }))
+    }
+
+    /// The type parameters of `fun<T, K>(...)`, which only its own parameters and returns name.
+    fn fun_generics(&mut self) -> Vec<SmolStr> {
+        let mut generics = Vec::new();
+        if self.eat(b'<') {
+            while let Some(name) = self.ident() {
+                generics.push(SmolStr::new(name));
+                if !self.eat(b',') {
+                    break;
+                }
+            }
+            self.eat(b'>');
+        }
+        generics
     }
 
     /// Steps over the name of a value a function type returns, as `ok` of `fun(): ok: boolean`.
@@ -1322,6 +1343,18 @@ mod tests {
         let mut parser = TypeParser::new("fun(): ok: Result, err: string the description");
         assert_eq!(parser.parse_names(), [(11, "Result")]);
         assert_eq!(parser.rest().trim(), "the description");
+    }
+
+    #[test]
+    fn function_types_may_declare_their_own_type_parameters() {
+        let Type::Fun(fun) = parse_type("fun<T, K>(x: T, k: K): T") else { panic!("no function type") };
+        assert_eq!(fun.generics, ["T", "K"]);
+        assert_eq!(fun.params.len(), 2);
+        let mut parser = TypeParser::new("fun<T>(x: T, y: Other): T|Other");
+        assert_eq!(parser.parse_names(), [(16, "Other"), (26, "Other")]);
+        let Type::Fun(fun) = parse_type("async fun<T>(x: T): T") else { panic!("no function type") };
+        assert!(fun.is_async);
+        assert_eq!(fun.generics, ["T"]);
     }
 
     #[test]
