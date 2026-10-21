@@ -636,7 +636,8 @@ as in `---@class Names : List<string>`, and a generic `---@alias Box<T> { value:
 for `Pair<L, R>`, stays `R`, and so do all of them where the class is named without arguments,
 as in `---@type List`, just as the table the `---@class` annotation declares and `self` in its
 methods keep them, being `List<T>`. A field of such a type takes any value but must still be
-given, and a method's own `---@generic T` binds from the call. An alias named without its type
+given, and a method's own `---@generic T` binds from the call. The annotations of its methods may
+name its type parameters in any file, as in lua-language-server. An alias named without its type
 arguments, as in `---@type Box`, reads its parameters as unknown instead, as lua-language-server
 does, and so does a table type that a class names as a parent, like the `{ [number]: T }` of
 `---@class Array<T> : { [number]: T }` for a `---@type Array`.

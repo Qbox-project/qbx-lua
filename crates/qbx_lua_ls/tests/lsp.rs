@@ -4325,6 +4325,32 @@ local known = get --[[@as Garage]]
 }
 
 #[test]
+fn methods_of_a_generic_class_of_another_file_name_its_type_parameters() {
+    let mut client = Client::start(fixture_root());
+    client.open_with("myresource/shared/config.lua", "---@class Test.Stack<T>\n---@field items T[]\nTestStack = {}\n");
+    let text = "\
+---@return T
+function TestStack:pop() end
+
+---@param item T
+function TestStack.push(item) end
+
+---@param value T
+TestStack.set = function(value) end
+
+---@param value T
+local function loose(value) end
+
+---@param value T
+
+function TestStack:detached(value) end
+";
+    client.open_with(CLIENT, text);
+    let found: Vec<u64> = findings(&mut client, CLIENT, &["undefined-doc-name"]).into_iter().map(|f| f.1).collect();
+    assert_eq!(found, [9, 12], "as in LuaLS, a function outside the class or a detached comment does not see `T`");
+}
+
+#[test]
 fn reports_missing_fields_of_class_typed_tables() {
     let mut client = Client::start(fixture_root());
     let text = "\

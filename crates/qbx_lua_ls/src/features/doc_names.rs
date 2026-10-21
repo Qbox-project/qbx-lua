@@ -6,15 +6,17 @@
 use qbx_fivem_data::Side;
 use qbx_lua_analysis::env::doc_blocks;
 use qbx_lua_syntax::ast::Chunk;
-use qbx_lua_syntax::{Comment, CommentKind, Span};
+use qbx_lua_syntax::{Comment, CommentKind, SmolStr, Span};
 
-use crate::index::Index;
-use crate::infer::{Infer, NATIVE_HANDLE_TYPES};
+use super::class_tables::Classes;
+use crate::infer::{documented_functions, Infer, NATIVE_HANDLE_TYPES};
+use crate::locate::statement_at;
 use crate::luacats::{declared_generics, extend_target_at, parse_doc_lines, referenced_type_names};
 
 /// Each type name in the doc comments of `chunk` that nothing declares for code on `side`, with its
 /// message.
-pub fn undefined_doc_names(index: &Index, source: &str, chunk: &Chunk, side: Option<Side>) -> Vec<(Span, String)> {
+pub fn undefined_doc_names(infer: &Infer, source: &str, chunk: &Chunk, side: Option<Side>) -> Vec<(Span, String)> {
+    let index = infer.index;
     let blocks = doc_blocks(source, &chunk.comments);
     let line = |comment: &Comment| (comment.span.start + 3, &comment.span.text(source)[3..]);
     // A generic class passes its parameters on to the methods declared for it elsewhere in the file.
@@ -50,9 +52,14 @@ pub fn undefined_doc_names(index: &Index, source: &str, chunk: &Chunk, side: Opt
     for block in &blocks {
         let lines: Vec<(u32, &str)> = block.iter().map(|comment| line(comment)).collect();
         let generics: Vec<&str> = lines.iter().flat_map(|(_, text)| declared_generics(text)).collect();
+        let mut owner_generics: Option<Vec<SmolStr>> = None;
         for (start, text) in &lines {
             for (offset, name) in referenced_type_names(text) {
-                if !(generics.contains(&name) || class_generics.contains(&name) || known(name)) {
+                if generics.contains(&name) || class_generics.contains(&name) || known(name) {
+                    continue;
+                }
+                let owner = owner_generics.get_or_insert_with(|| method_owner_generics(infer, chunk, block));
+                if !owner.iter().any(|generic| generic == name) {
                     report(start + offset as u32, name);
                 }
             }
@@ -76,6 +83,34 @@ pub fn undefined_doc_names(index: &Index, source: &str, chunk: &Chunk, side: Opt
         }
     }
     out
+}
+
+/// The type parameters of the class whose table holds the function that `block` documents, as the
+/// `T` of `function Stack:pop()` for a `---@class Stack<T>` that any file declares.
+fn method_owner_generics(infer: &Infer, chunk: &Chunk, block: &[&Comment]) -> Vec<SmolStr> {
+    let source = infer.ctx.source;
+    let Some(mut at) = block.last().map(|comment| comment.span.end) else { return Vec::new() };
+    loop {
+        let rest = &source[at as usize..];
+        let gap = &rest[..rest.len() - rest.trim_start().len()];
+        if gap.bytes().filter(|b| *b == b'\n').count() > 1 {
+            return Vec::new();
+        }
+        at += gap.len() as u32;
+        let next = chunk.comments.partition_point(|comment| comment.span.start < at);
+        match chunk.comments.get(next).filter(|comment| comment.span.start == at) {
+            Some(comment) => at = comment.span.end,
+            None => break,
+        }
+    }
+    let Some(stmt) = statement_at(chunk, at) else { return Vec::new() };
+    let classes = Classes::new(infer);
+    documented_functions(stmt)
+        .into_iter()
+        .filter_map(|func| classes.class_of(&infer.doc_self(stmt, func), infer.ctx.file))
+        .flat_map(|(name, _, view)| classes.class_defs(&name, view))
+        .flat_map(|(_, class)| class.generics.clone())
+        .collect()
 }
 
 /// Each `---@extend` line of `chunk` whose signature no function takes, as one that names a global

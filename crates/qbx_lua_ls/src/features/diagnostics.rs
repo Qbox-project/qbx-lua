@@ -135,7 +135,7 @@ fn type_diagnostics<'a>(
     let checks: [(&'static str, Check); 22] = [
         (UNDEFINED_DOC_NAME, |input| {
             let side = input.ws.index.file(input.doc.file).and_then(|f| f.side);
-            let mut out = undefined_doc_names(&input.ws.index, &input.doc.text, &input.doc.chunk, side);
+            let mut out = undefined_doc_names(input.infer, &input.doc.text, &input.doc.chunk, side);
             out.extend(unextended_functions(input.infer, &input.doc.text, &input.doc.chunk));
             out
         }),
