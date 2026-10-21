@@ -492,8 +492,11 @@ impl Workspace {
         let mut env = ResourceEnv::default();
         let Some(entry) = self.index.resource(resource) else { return env };
         env.opaque = entry.escrowed;
-        for file in entry.files.iter().filter_map(|id| self.index.file(*id)) {
-            env.add_summary(&file.index.summary, file.side);
+        for (id, file) in entry.files.iter().filter_map(|id| Some((*id, self.index.file(*id)?))) {
+            match file.side {
+                None if self.index.loaders_of(id).is_empty() => env.add_unlisted_summary(&file.index.summary),
+                side => env.add_summary(&file.index.summary, side),
+            }
         }
         for (pattern, side) in resource_imports(&entry.manifest, &entry.manifest_path, &self.lint_config) {
             let files = self.import_files(pattern).into_iter().filter_map(|id| self.index.file(id));

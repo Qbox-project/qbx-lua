@@ -5,6 +5,7 @@ use qbx_lua_syntax::visit::{self, Visitor};
 use qbx_lua_syntax::{Comment, SmolStr, Span};
 use qbx_luacats::types::{FunType, Type};
 
+use crate::env::is_meta_file;
 use crate::scope::{GlobalRefKind, Resolution, Resolved, MAIN_CHUNK};
 use crate::signature::{defined, doc_aliases, doc_extensions, global_key, member_path, undocumented};
 
@@ -42,6 +43,8 @@ pub struct FileSummary {
     /// The signatures `---@extend` lines add to the functions of the globals and global table fields
     /// at their dotted paths. They count beside the definitions of a function, never instead of them.
     pub extensions: Vec<(SmolStr, Arc<FunType>)>,
+    /// Whether a `---@meta` line marks it as a definition file, which declares what other code defines.
+    pub meta: bool,
 }
 
 /// The `@resource/file.lua` import a `lib.load`/`require` module name refers to.
@@ -89,6 +92,7 @@ pub fn summarize(source: &str, chunk: &Chunk, resolution: &Resolution) -> FileSu
         functions: collector.functions,
         aliases: doc_aliases(source, &chunk.comments),
         extensions: doc_extensions(source, &chunk.comments),
+        meta: is_meta_file(source, chunk),
     }
 }
 

@@ -171,6 +171,16 @@ fn fixes_are_applied_and_converge() {
 }
 
 #[test]
+fn stubs_in_files_no_manifest_runs_give_no_signatures() {
+    let root = fixtures().join("stubbed");
+    // The tests of `mocked_game` stub natives without parameters, for it and the library it loads.
+    for resource in ["mocked_game", "mocked_lib"] {
+        let actual = render(&root.join(resource), &Config::default());
+        assert!(!actual.contains("redundant-parameter"), "{resource}: {actual}");
+    }
+}
+
+#[test]
 fn files_that_other_resources_load_see_their_globals() {
     let root = fixtures().join("loaded");
     let actual = render(&root.join("bridge"), &Config::default());

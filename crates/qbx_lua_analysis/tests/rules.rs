@@ -1129,6 +1129,18 @@ fn the_definition_that_takes_the_most_arguments_decides() {
 }
 
 #[test]
+fn runtime_functions_keep_their_signatures_beside_definitions() {
+    let client = (Some(Side::Client), "function HasModelLoaded() return true end");
+    let server = (Some(Side::Server), "os.time = function() return 0 end");
+    assert!(redundant_parameters("print(HasModelLoaded(`adder`))", Some(Side::Client), &[client]).is_empty());
+    assert!(redundant_parameters("print(os.time({}))", Some(Side::Server), &[server]).is_empty());
+    assert_eq!(
+        redundant_parameters("print(os.time({}, 2))", Some(Side::Server), &[server]),
+        ["'os.time' is called with 2 arguments, but takes at most 1"]
+    );
+}
+
+#[test]
 fn signatures_added_with_extend_count_beside_the_definitions() {
     let defs = (None, "---@param action string\n---@param handler function\nfunction OnAction(action, handler) end");
     let extend = (

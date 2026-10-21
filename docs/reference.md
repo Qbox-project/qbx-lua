@@ -393,6 +393,12 @@ local function noop() end
 noop(function() end) -- 'noop' is called with 1 argument, but takes none
 ```
 
+As in LuaLS, every definition of a global counts, and a native or runtime function that a resource
+redefines keeps its own signature beside the redefinition. A file of the resource that no manifest
+runs, that no other resource loads and that the configuration gives no side, such as a test that
+stubs `HasModelLoaded`, adds no signature unless it is a `---@meta` definition file: the functions it
+defines may be any.
+
 A function `@field` that repeats the name of an unscoped one is another signature of it, as LuaLS
 reads it, rather than a second field: a call picks the signature its arguments fit, and hover shows
 the descriptions of both. Repeated with `(server)` or `(client)`, the signature only applies on

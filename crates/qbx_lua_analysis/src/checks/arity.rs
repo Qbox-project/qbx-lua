@@ -14,7 +14,9 @@ use crate::project::ResourceEnv;
 use crate::rules;
 use crate::scope::{LocalId, LocalKind, Resolved};
 use crate::side_guard::SideRegions;
-use crate::signature::{defined, global_key, member_path, most_arguments, undocumented, Requirement};
+use crate::signature::{
+    defined, global_key, member_path, most_arguments, runtime_definition, undocumented, Requirement,
+};
 
 /// Every value assigned to a local or to a field of a local table, by local and dotted field path.
 type LocalDefs = FxHashMap<(LocalId, SmolStr), Vec<Option<Arc<FunType>>>>;
@@ -87,9 +89,10 @@ impl<'i, 'a> Callees<'i, 'a> {
             Resolved::Global(_) => {
                 let path = global_key(&root.text, fields)?;
                 let mut defs: Vec<_> = self.env().function_defs(&path, side).map(|def| def.cloned()).collect();
-                // What `---@extend` lines add counts beside the definitions, so a native or a
-                // function the resource does not define keeps the signatures it has.
+                // What the runtime and `---@extend` lines define counts beside the definitions, so a
+                // native or a function the resource does not define keeps the signatures it has.
                 if !defs.is_empty() {
+                    defs.extend(runtime_definition(&path, side));
                     defs.extend(self.env().extension_defs(&path, side).map(|fun| Some(fun.clone())));
                 }
                 defs

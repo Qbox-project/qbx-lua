@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 
+use qbx_fivem_data::{native, Side};
 use qbx_lua_syntax::ast::{Expr, ExprKind, FuncBody, Name};
 use qbx_lua_syntax::{Comment, SmolStr};
 use qbx_luacats::luacats::{parse_doc_lines, DocGroup};
-use qbx_luacats::types::{FunType, Param, Type};
+use qbx_luacats::types::{parse_type, FunType, Param, Type};
 
-use crate::env::leading_doc_lines;
+use crate::env::{builtins, leading_doc_lines};
 
 const MAX_ALIAS_DEPTH: u8 = 8;
 
@@ -46,6 +47,30 @@ pub fn defined(source: &str, comments: &[Comment], stmt_start: u32, func: &FuncB
 pub fn undocumented(func: &FuncBody, is_method: bool) -> Arc<FunType> {
     let names: Vec<SmolStr> = func.params.iter().map(|p| p.text.clone()).collect();
     Arc::new(DocGroup::default().fun_type(&names, func.vararg.is_some(), is_method))
+}
+
+/// What the runtime defines at the dotted `path` for code on `side`, as one more definition of a
+/// global function: the signature of a function of the stubs or of a native, `Some(None)` for another
+/// runtime value, and `None` where the runtime defines nothing.
+pub fn runtime_definition(path: &str, side: Option<Side>) -> Option<Option<Arc<FunType>>> {
+    if let Some(fun) = builtins().function(path) {
+        return Some(Some(fun.clone()));
+    }
+    if let Some(native) = native(path) {
+        let params = native.on(side).params();
+        let params = params.map(|(name, ty, optional)| Param {
+            name: name.into(),
+            ty: parse_type(ty),
+            optional,
+            ..Param::default()
+        });
+        return Some(Some(Arc::new(FunType { params: params.collect(), ..FunType::default() })));
+    }
+    let defined = match path.split_once('.') {
+        Some((table, field)) => builtins().get(table).is_some_and(|global| global.fields.contains(field)),
+        None => builtins().get(path).is_some(),
+    };
+    defined.then_some(None)
 }
 
 /// The variable an `a.b.c` or `a['b']` chain starts from, and the field names after it.

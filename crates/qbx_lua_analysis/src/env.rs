@@ -1,9 +1,12 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use qbx_fivem_data::{Side, Stub, STUBS};
 use qbx_lua_syntax::ast::*;
 use qbx_lua_syntax::{parse, Comment, CommentKind, SmolStr};
+use qbx_luacats::types::FunType;
 use rustc_hash::{FxHashMap, FxHashSet};
+
+use crate::signature::{defined, global_key};
 
 #[derive(Debug)]
 pub struct BuiltinGlobal {
@@ -18,6 +21,8 @@ pub struct BuiltinGlobal {
 #[derive(Debug, Default)]
 pub struct Builtins {
     globals: FxHashMap<SmolStr, BuiltinGlobal>,
+    /// The signatures of the functions the stubs declare, by dotted path, such as `os.time`.
+    functions: FxHashMap<SmolStr, Arc<FunType>>,
 }
 
 /// Library tables whose field set is fully known, so reading anything else is a bug.
@@ -42,6 +47,11 @@ impl Builtins {
         self.globals.iter()
     }
 
+    /// The signature the stubs declare for the runtime function at the dotted `path`.
+    pub fn function(&self, path: &str) -> Option<&Arc<FunType>> {
+        self.functions.get(path)
+    }
+
     fn entry(&mut self, name: &SmolStr, side: Side, library: bool) -> &mut BuiltinGlobal {
         self.globals.entry(name.clone()).or_insert_with(|| BuiltinGlobal {
             side,
@@ -60,9 +70,14 @@ impl Builtins {
                 .iter()
                 .any(|line| line.trim_start().starts_with("@deprecated"));
             match &stmt.kind {
-                StmtKind::Function { name, .. } => {
+                StmtKind::Function { name, func } => {
                     let member = name.path.first().or(name.method.as_ref());
                     self.define(stub, &name.base.text, member.map(|m| &m.text), deprecated);
+                    let fields: Vec<&str> = name.path.iter().chain(&name.method).map(|n| n.text.as_str()).collect();
+                    if let Some(path) = global_key(&name.base.text, &fields) {
+                        let signature = defined(source, &chunk.comments, stmt.span.start, func, name.method.is_some());
+                        self.functions.entry(path).or_insert(signature);
+                    }
                 }
                 StmtKind::Assign { targets, .. } => {
                     for target in targets {

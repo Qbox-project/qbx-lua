@@ -273,6 +273,17 @@ impl ResourceEnv {
     }
 
     pub fn add_summary(&mut self, summary: &FileSummary, side: Option<Side>) {
+        self.add_file(summary, side, true);
+    }
+
+    /// Adds a file of the resource that no manifest runs and the configuration gives no side, such as
+    /// a test that stubs natives: its globals count, but unless it is a definition file, the
+    /// functions it defines may be any.
+    pub fn add_unlisted_summary(&mut self, summary: &FileSummary) {
+        self.add_file(summary, None, summary.meta);
+    }
+
+    fn add_file(&mut self, summary: &FileSummary, side: Option<Side>, signatures: bool) {
         for def in &summary.global_defs {
             self.add_global(&def.name, side);
             if def.at_file_scope {
@@ -282,9 +293,10 @@ impl ResourceEnv {
         self.field_defs.extend(summary.global_field_defs.iter().cloned());
         self.module_imports.extend(summary.module_imports.iter().cloned());
         for def in &summary.functions {
-            self.functions.entry(def.path.clone()).or_default().push((side, def.signature.clone()));
+            let signature = def.signature.clone().filter(|_| signatures);
+            self.functions.entry(def.path.clone()).or_default().push((side, signature));
         }
-        for (path, fun) in &summary.extensions {
+        for (path, fun) in summary.extensions.iter().filter(|_| signatures) {
             self.extensions.entry(path.clone()).or_default().push((side, fun.clone()));
         }
         for (name, ty) in &summary.aliases {
@@ -555,6 +567,7 @@ impl ResourceLocator {
         for path in paths.iter().filter(|path| !is_manifest_file(path)) {
             let side = side_of(&manifest, &relative_slash_path(root, path)).or_else(|| config.side_for(path));
             match self.read_summary(path) {
+                Some(summary) if side.is_none() => env.add_unlisted_summary(summary),
                 Some(summary) => env.add_summary(summary, side),
                 None => env.opaque = true,
             }
@@ -622,25 +635,31 @@ impl Resource {
             };
             let relative = relative_slash_path(root, &path);
             let side = side_of(&manifest, &relative).or_else(|| config.side_for(&path));
-            let file = ParsedFile::new(path, relative, source, side);
-            env.add_summary(&file.summary, side);
-            files.push(file);
+            files.push(ParsedFile::new(path, relative, source, side));
         }
-        for (pattern, side) in resource_imports(&manifest, &manifest_path, config) {
-            env.add_import(pattern, side, locator.import_summaries(root, pattern, config));
-        }
-        // What `loader_env` finds for this resource, for the files it loads from other resources.
-        locator.envs.entry(root.to_path_buf()).or_insert_with(|| env.clone());
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let unlisted: Vec<Option<&str>> = files
             .iter()
             .map(|file| side_of(&manifest, &file.relative).is_none().then_some(file.relative.as_str()))
             .collect();
         let loads_any = |path: &str| unlisted.iter().flatten().any(|relative| import_loads(path, relative));
-        let loaders: Vec<(String, ResourceEnv)> = locator
-            .loaders(root, &name, config)
+        let loader_paths: Vec<(PathBuf, String)> =
+            locator.loaders(root, &name, config).into_iter().filter(|(_, path)| loads_any(path)).collect();
+        for file in &files {
+            match file.side {
+                None if !loader_paths.iter().any(|(_, path)| import_loads(path, &file.relative)) => {
+                    env.add_unlisted_summary(&file.summary)
+                }
+                side => env.add_summary(&file.summary, side),
+            }
+        }
+        for (pattern, side) in resource_imports(&manifest, &manifest_path, config) {
+            env.add_import(pattern, side, locator.import_summaries(root, pattern, config));
+        }
+        // What `loader_env` finds for this resource, for the files it loads from other resources.
+        locator.envs.entry(root.to_path_buf()).or_insert_with(|| env.clone());
+        let loaders: Vec<(String, ResourceEnv)> = loader_paths
             .into_iter()
-            .filter(|(_, path)| loads_any(path))
             .filter_map(|(loader, path)| Some((path, locator.loader_env(&loader, config)?)))
             .collect();
         let mut loaded_envs = Vec::new();
