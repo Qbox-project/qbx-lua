@@ -1010,7 +1010,12 @@ declares counts: lua-language-server leaves out the one a function without `@ret
 With [`strict`](#strict-mode), as in TypeScript, all of those count. A local that starts as `false`
 or `true` is a `boolean`, and one declared with a table constructor takes any table. A literal that
 a function declares it returns, as the `"a"|"b"` of `---@return "a"|"b"`, is one of the only values
-its local takes, while a literal written out, also through `and` and `or`, widens to its kind. Each
+its local takes, while a literal written out, also through `and` and `or`, widens to its kind. A
+local copied from a value that a [type guard](../crates/qbx_lua_ls/README.md#type-guards) narrows
+takes the literals that the value's type lists of the kinds the guard leaves, as lua-language-server
+narrows a value by its kind alone: `local mode = state` after `if state ~= "idle" then return end`
+takes `"busy"` too for an `"idle"|"busy"`, and `local enabled = flag` after `if not flag` takes
+`false`. With `strict`, as in TypeScript, it has the type the guard leaves. Each
 name of an assignment is checked against its own local, also inside the functions that a local is
 assigned in.
 

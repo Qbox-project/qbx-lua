@@ -112,6 +112,36 @@ impl<'a, 'b> Declared<'a, 'b> {
         self.declared(expr, 0)
     }
 
+    /// The type of `expr` as `of` gives it, without what the guards around it tell about the local
+    /// or the field it reads: the declared types of the values that may reach it.
+    pub fn unguarded(&self, expr: &Expr) -> Type {
+        if let Some(cast) = self.cast(expr) {
+            return cast;
+        }
+        let expr = expr.unparen();
+        match &expr.kind {
+            ExprKind::Name(name) => match self.infer.ctx.resolution.resolve_at(name.span.start) {
+                Some(Resolved::Local(id)) => {
+                    let mut types = Vec::new();
+                    for value in self.infer.ctx.flow().at(id, name.span.start).iter() {
+                        types.extend(self.bases(id, value.origin, 0).iter().flat_map(Bases::iter).cloned());
+                    }
+                    match types.iter().any(Type::is_unknown) {
+                        true => Type::Unknown,
+                        false => Type::union(types),
+                    }
+                }
+                _ => self.of(expr),
+            },
+            ExprKind::Field { base, name, .. } => self.field(base, &Key::Name(&name.text), true, 0),
+            ExprKind::Index { base, index, .. } => match index.as_string() {
+                Some(name) => self.field(base, &Key::Name(name), true, 0),
+                None => self.of(expr),
+            },
+            _ => self.of(expr),
+        }
+    }
+
     fn declared(&self, expr: &Expr, depth: u32) -> Type {
         if depth > MAX_DEPTH {
             return Type::Unknown;

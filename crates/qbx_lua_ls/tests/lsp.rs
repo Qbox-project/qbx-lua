@@ -8445,6 +8445,62 @@ print(hit, struck, part)
 }
 
 #[test]
+fn locals_copied_from_a_guarded_value_take_its_literals_of_the_kinds_left_unless_strict() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Test.Machine
+---@field state 'idle'|'busy'
+
+---@param state 'idle'|'busy'
+---@param flag boolean
+---@param machine Test.Machine
+---@param value string|number
+local function run(state, flag, machine, value)
+    if state ~= 'idle' then return end
+    if not flag then return end
+    if machine.state ~= 'idle' then return end
+    if type(value) ~= 'string' then return end
+    local mode = state
+    mode = 'busy'
+    mode = 'off'
+    local enabled = flag
+    enabled = false
+    local current = machine.state
+    current = 'busy'
+    local text = value
+    text = 5
+    print(mode, enabled, current, text)
+end
+return run
+";
+    client.open_with(CLIENT, text);
+    let line = |needle: &str| pos(text, needle, 0).0 as u64;
+    let finding = |needle: &str, message: &str| ("cast-local-type".to_string(), line(needle), message.to_string());
+    let relaxed = findings(&mut client, CLIENT, &["cast-local-type"]);
+    assert_eq!(
+        relaxed,
+        [
+            finding("mode = 'off'", "Cannot assign `\"off\"` to `mode`, defined as `\"idle\"|\"busy\"`"),
+            finding("text = 5", "Cannot assign `integer` to `text`, defined as `string`"),
+        ],
+        "as in lua-language-server, which narrows a value by its kind alone, a local copied from a guarded \
+         value takes the literals its declaration lists of the kinds the guards leave"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["cast-local-type"]),
+        [
+            finding("mode = 'busy'", "Cannot assign `\"busy\"` to `mode`, defined as `\"idle\"`"),
+            finding("mode = 'off'", "Cannot assign `\"off\"` to `mode`, defined as `\"idle\"`"),
+            finding("enabled = false", "Cannot assign `false` to `enabled`, defined as `true`"),
+            finding("current = 'busy'", "Cannot assign `\"busy\"` to `current`, defined as `\"idle\"`"),
+            finding("text = 5", "Cannot assign `integer` to `text`, defined as `string`"),
+        ],
+        "with `strict`, as in TypeScript, it has the type the guards narrow the value to"
+    );
+}
+
+#[test]
 fn nil_that_other_code_gives_a_local_counts_with_strict() {
     let mut client = Client::start(fixture_root());
     let text = "\

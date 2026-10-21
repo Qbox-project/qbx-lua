@@ -3,8 +3,11 @@
 //! TypeScript, such a local has the type of the value it is declared with. A literal written out
 //! stands for its kind, so `local mode = 'dev'` takes any string and `local count = 0` any number,
 //! while the literals that a function declares it returns, as the `'a'|'b'` of `getMode()`, are the
-//! only ones it takes. A loop variable has the type its loop gives it. A local declared without a
-//! value, or as `nil`, `unknown` or `any`, takes any value.
+//! only ones it takes. A local copied from a value that guards narrow takes the literals its
+//! declared type lists of the kinds they leave, as lua-language-server narrows a value by its kind
+//! alone, so `local mode = state` after `if state ~= 'idle' then return end` takes `'busy'` too. A
+//! loop variable has the type its loop gives it. A local declared without a value, or as `nil`,
+//! `unknown` or `any`, takes any value.
 //!
 //! The check is that of `assign-type-mismatch`, for each type the value may be: a different kind of
 //! value, or a literal the type does not list, so `nil`, or a `string?`, needs a local that may be
@@ -17,8 +20,8 @@
 //! no annotation or stub declares: lua-language-server leaves out the one a function without
 //! `@return` gives, as `nextFreePoint()` does by running past its end when it finds none, also where
 //! a local passes it on. Parameters are not checked. With `strict`, as in TypeScript, all of
-//! those count, and a parameter has the type of the function type its function is passed or
-//! written as.
+//! those count, a local copied from a guarded value has the type the guards leave, and a parameter
+//! has the type of the function type its function is passed or written as.
 
 use qbx_lua_analysis::scope::{LocalId, Resolved};
 use qbx_lua_syntax::ast::*;
@@ -123,7 +126,30 @@ impl Finder<'_, '_> {
                 .and_then(|values| values.into_iter().nth(index + 1 - exprs.len()))
                 .unwrap_or_default(),
         };
-        Some((if declared.widen() == declared { widened } else { ty }, native))
+        if declared.widen() == declared {
+            return Some((widened, native));
+        }
+        match exprs.get(index) {
+            Some(value) if !self.infer.strict() => Some((self.of_kinds_left(value, ty), native)),
+            _ => Some((ty, native)),
+        }
+    }
+
+    /// The parts of the declared type of `value` of the kinds that `ty`, what the guards around it
+    /// leave of it, holds, as lua-language-server narrows a value by its kind alone.
+    fn of_kinds_left(&self, value: &Expr, ty: Type) -> Type {
+        let from = self.classes.file();
+        let unguarded = self.declared.unguarded(value);
+        let (mut left, mut whole) = (Vec::new(), Vec::new());
+        self.classes.flatten(&ty, from, &mut left, 0);
+        self.classes.flatten(&unguarded, from, &mut whole, 0);
+        let kinds: Vec<Type> = left.iter().map(Type::widen).collect();
+        let kept: Vec<Type> = whole.iter().filter(|part| kinds.contains(&part.widen())).cloned().collect();
+        match kept.len() {
+            0 => ty,
+            kept_all if kept_all == whole.len() => unguarded,
+            _ => Type::union(kept),
+        }
     }
 
     /// Whether a native call gives the value at `index` of those that `exprs` assign.
