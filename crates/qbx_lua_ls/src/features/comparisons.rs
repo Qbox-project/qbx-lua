@@ -702,7 +702,7 @@ fn int_literal(expr: &Expr) -> Option<i64> {
     match &expr.unparen().kind {
         ExprKind::Number(NumberValue::Int(i)) => Some(*i),
         ExprKind::Unary { op: UnOp::Neg, expr } => match expr.unparen().kind {
-            ExprKind::Number(NumberValue::Int(i)) => Some(-i),
+            ExprKind::Number(NumberValue::Int(i)) => i.checked_neg(),
             _ => None,
         },
         _ => None,

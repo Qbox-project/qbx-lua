@@ -7337,6 +7337,28 @@ print(read)
 }
 
 #[test]
+fn loop_steps_that_overflow_when_negated_are_no_sequence() {
+    let mut client = Client::start(fixture_root());
+    let text = "---@type { [number]: string? }
+local rows = {}
+for i = 1, #rows, -0x8000000000000000 do
+    local row = rows[i]
+    print(row:upper())
+end
+";
+    client.open_with(CLIENT, text);
+    assert_eq!(
+        findings(&mut client, CLIENT, &["need-check-nil"]),
+        [(
+            "need-check-nil".to_string(),
+            pos(text, "row:upper", 0).0 as u64,
+            "`row` may be nil: its type here is `string?`".to_string()
+        )],
+        "a step whose negation overflows walks no sequence, and reading it raises no error"
+    );
+}
+
+#[test]
 fn nil_checks_read_the_nil_that_functions_without_return_annotations_return() {
     let mut client = Client::start(fixture_root());
     let text = "\
