@@ -4,11 +4,13 @@ use qbx_lua_syntax::visit::{self, Visitor};
 use qbx_lua_syntax::{SmolStr, Span};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::env::builtins;
+
 /// Parts of a file that only run on one side, whatever the manifest says about the file:
-/// the branches of `if IsDuplicityVersion() then ... else ... end`, of `lib.context == 'server'`
-/// or of a local that holds the context as ox_lib's `IsDuplicityVersion() and 'server' or 'client'`
-/// does, the code after `if not IsDuplicityVersion() then return end`, and the right side of
-/// `IsDuplicityVersion() and ...`.
+/// the branches of `if IsDuplicityVersion() then ... else ... end`, of `lib.context == 'server'`,
+/// of `if os then`, which only the server opens, or of a local that holds the context as ox_lib's
+/// `IsDuplicityVersion() and 'server' or 'client'` does, the code after `if not
+/// IsDuplicityVersion() then return end`, and the right side of `IsDuplicityVersion() and ...`.
 #[derive(Debug, Default)]
 pub struct SideRegions {
     regions: Vec<(Span, Side)>,
@@ -16,7 +18,7 @@ pub struct SideRegions {
 
 impl SideRegions {
     pub fn of(source: &str, chunk: &Chunk) -> Self {
-        if !source.contains("IsDuplicityVersion") && !source.contains("lib.context") {
+        if !source.contains("IsDuplicityVersion") && !source.contains("lib.context") && !tests_library(source) {
             return Self::default();
         }
         Self::of_chunk(chunk)
@@ -65,6 +67,25 @@ fn is_duplicity_call(expr: &Expr) -> bool {
     }
 }
 
+/// The side of a standard library that only one side opens, such as the server's `os`, which a
+/// script tests for to tell the side it runs on.
+fn library_side(name: &str) -> Option<Side> {
+    builtins().get(name).filter(|global| global.library && global.side != Side::Shared).map(|global| global.side)
+}
+
+/// Whether `source` may test for such a library: it names one other than to reach a field of it.
+fn tests_library(source: &str) -> bool {
+    let is_name = |c: char| c.is_alphanumeric() || c == '_';
+    builtins().names().filter(|(name, _)| library_side(name).is_some()).any(|(name, _)| {
+        source.match_indices(name.as_str()).any(|(at, _)| {
+            let rest = &source[at + name.len()..];
+            !source[..at].ends_with(is_name)
+                && !rest.starts_with(is_name)
+                && !rest.trim_start().starts_with(['.', ':', '['])
+        })
+    })
+}
+
 fn context_literal(expr: &Expr) -> Option<Side> {
     match expr.unparen().as_string()?.as_str() {
         "server" => Some(Side::Server),
@@ -103,7 +124,9 @@ fn side_when_true(cond: &Expr, names: &Names) -> Option<(Side, bool)> {
         return Some((Side::Server, true));
     }
     match &cond.kind {
-        ExprKind::Name(name) => names.flags.get(&name.text).map(|side| (*side, true)),
+        ExprKind::Name(name) => {
+            names.flags.get(&name.text).copied().or_else(|| library_side(&name.text)).map(|side| (side, true))
+        }
         ExprKind::Unary { op: UnOp::Not, expr } => {
             let (side, exact) = side_when_true(expr, names)?;
             exact.then_some((other(side), true))
@@ -170,6 +193,20 @@ struct Finder {
 }
 
 impl Finder {
+    /// Puts the libraries that `cond` tests for, as the `os` of `if os then`, on the side that has
+    /// them, since testing for one reads nil on the other side.
+    fn tested_libraries(&mut self, cond: &Expr) {
+        match &cond.unparen().kind {
+            ExprKind::Name(name) => self.regions.extend(library_side(&name.text).map(|side| (name.span, side))),
+            ExprKind::Unary { op: UnOp::Not, expr } => self.tested_libraries(expr),
+            ExprKind::Binary { op: BinOp::And | BinOp::Or, lhs, rhs, .. } => {
+                self.tested_libraries(lhs);
+                self.tested_libraries(rhs);
+            }
+            _ => {}
+        }
+    }
+
     /// `if <not this side> then return end`: the side the rest of the block runs on.
     fn guard(&self, stmt: &Stmt) -> Option<Side> {
         let StmtKind::If { branches, else_block: None } = &stmt.kind else { return None };
@@ -197,6 +234,7 @@ impl<'ast> Visitor<'ast> for Finder {
             let mut excluded = Vec::new();
             let else_start = else_block.as_ref().map(|block| block.span.start.min(stmt.span.end));
             for (index, branch) in branches.iter().enumerate() {
+                self.tested_libraries(&branch.cond);
                 let Some((side, exact)) = side_when_true(&branch.cond, &self.names) else { continue };
                 // Measured between the keywords so half-typed code inside the branch still counts.
                 let next = branches.get(index + 1).map(|b| b.keyword_span.start);
@@ -216,6 +254,7 @@ impl<'ast> Visitor<'ast> for Finder {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         // The right side of `isServer and os.time()` only runs where the left side is true.
         if let ExprKind::Binary { op: BinOp::And, lhs, rhs, .. } = &expr.kind {
+            self.tested_libraries(lhs);
             if let Some((side, _)) = side_when_true(lhs, &self.names) {
                 self.regions.push((rhs.span, side));
             }

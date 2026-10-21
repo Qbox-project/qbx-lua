@@ -167,10 +167,8 @@ fn check_read(input: &FileInput, global: &GlobalRef, regions: &SideRegions, shar
     // A shared script also runs on the side that lacks a name, unless a guard keeps the code off it.
     let unguarded_shared = guarded.is_none() && input.side == Some(Side::Shared);
     if let Some(builtin) = builtins().get(name) {
-        // A standard library is missing anywhere on that side; other CfxLua globals, like natives,
-        // only where the code runs on both sides.
         let missing_from_shared =
-            builtin.side != Side::Shared && unguarded_shared && (builtin.library || shared.runs_on_both(input, global));
+            builtin.side != Side::Shared && unguarded_shared && shared.runs_on_both(input, global);
         if !builtin.side.is_available_on(side) {
             sink.report(
                 rules::NATIVE_WRONG_SIDE,

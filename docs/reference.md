@@ -238,24 +238,24 @@ globals, natives and `(server)` or `(client)` annotations of that side, and its 
 reach scripts of that side. The side is never guessed from folder names.
 
 Recognized runtime guards narrow side checks within a file. Examples include
-`IsDuplicityVersion()`, a local flag initialized from it, `lib.context == 'server'`, and a local
-that holds the name of the side, as ox_lib's `local context = IsDuplicityVersion() and 'server' or
-'client'` does, compared with `'server'` or `'client'`.
+`IsDuplicityVersion()`, a local flag initialized from it, `lib.context == 'server'`, a test for a
+library only the server has, as `if os then`, and a local that holds the name of the side, as
+ox_lib's `local context = IsDuplicityVersion() and 'server' or 'client'` does, compared with
+`'server'` or `'client'`.
 An early return such as `if not IsDuplicityVersion() then return end` narrows the following code
 to the server, and `isServer and os.time()` narrows the right side of the `and`. Event
 registrations inside these regions use that effective side.
 
-FiveM only loads the `io` and `os` libraries on the server. `fivem/native-wrong-side` reports them
-in client scripts, and in shared scripts too, since those also run on the client, unless one of
-these guards keeps the code on the server. Scripts whose side is unknown are not reported. Natives
-and the other runtime globals of one side, such as `TriggerClientEvent`, and the globals that the
-resource only defines in scripts of one side, such as a function of `client/utils.lua`, are reported
-in scripts or guarded code of the other side, and in code of a shared script that runs while it
-loads: outside functions, or in a thread that `CreateThread` or `SetTimeout` starts then. A function
-of a shared script is left to the side that calls it, as the callbacks of a shared config usually
-only run on the client. With [`strict`](#strict-mode), as TypeScript knows no sides, they are
-reported anywhere in a shared script that no guard keeps on their side. In
-client scripts, `os` and `io` are not completed and have no hover. Their functions are FiveM's:
+FiveM only loads the `io` and `os` libraries on the server, so ox_lib tests for one, as in
+`os and os.time() or GetCloudTimeAsInt()`, to tell the side. Scripts whose side is unknown are not
+reported. `io` and `os`, natives and the other runtime globals of one side, such as
+`TriggerClientEvent`, and the globals that the resource only defines in scripts of one side, such
+as a function of `client/utils.lua`, are reported in scripts or guarded code of the other side, and
+in code of a shared script that runs while it loads: outside functions, or in a thread that
+`CreateThread` or `SetTimeout` starts then. A function of a shared script is left to the side that
+calls it, as the callbacks of a shared config usually only run on the client. With
+[`strict`](#strict-mode), as TypeScript knows no sides, they are reported anywhere in a shared
+script that no guard keeps on their side. In client scripts, `os` and `io` are not completed and have no hover. Their functions are FiveM's:
 there is no `os.exit`, `io.input`, `io.output` or `io.read`, and CfxLua adds `os.createdir`,
 `io.readdir` and timers such as `os.nanotime`.
 

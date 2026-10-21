@@ -354,6 +354,23 @@ fn server_libraries_are_missing_on_the_client() {
         none,
         "CfxLua globals in functions follow the calling side"
     );
+    let stamp = "function Stamp()\n    return os.date('%Y'), io.open('a')\nend";
+    assert_eq!(wrong_side(stamp, shared), none, "so do libraries");
+    let strict = {
+        let mut config = FileConfig::default();
+        config.set_strict_default(true);
+        config
+    };
+    assert_eq!(
+        call_messages_with(
+            "fivem/native-wrong-side",
+            "function Now()\n    return os.time()\nend",
+            shared,
+            &[],
+            &strict
+        ),
+        ["'os' only exists on the server, but this shared script also runs on the client"]
+    );
 
     for source in [
         "if IsDuplicityVersion() then\n    print(os.time())\nend",
@@ -369,6 +386,10 @@ fn server_libraries_are_missing_on_the_client() {
         "local context = IsDuplicityVersion() and 'server' or 'client'\nif context == 'server' then print(os.time()) end",
         "local context = IsDuplicityVersion() and 'server' or 'client'\nif context == 'client' then\n    print(1)\nelse\n    print(os.time())\nend",
         "local side = lib.context\nif side ~= 'client' then print(os.time()) end",
+        "print(os and os.time())",
+        "if os then\n    print(os.time(), TriggerClientEvent('a', -1))\nend",
+        "if not io then return end\nprint(io.open('data.json'))",
+        "if os and os.time() > 0 then\n    print(1)\nend",
     ] {
         assert_eq!(wrong_side(source, shared), none, "only the server runs: {source}");
     }
@@ -383,6 +404,8 @@ fn server_libraries_are_missing_on_the_client() {
         "if lib.context == 'client' then\n    print(os.time())\nend",
         "local context = IsDuplicityVersion() and 'server' or 'client'\nif context == 'client' then print(os.time()) end",
         "local context = not IsDuplicityVersion() and 'client' or 'server'\nif context ~= 'server' then print(os.time()) end",
+        "if os then\n    print(1)\nelse\n    print(os.time())\nend",
+        "if not os then\n    print(os.time())\nend",
     ] {
         assert_eq!(wrong_side(source, shared), [os_in_client_code], "only the client runs: {source}");
     }
