@@ -300,15 +300,32 @@ given again to a local declared with a table outside any function is still that 
 for the functions that run at other times. A loop starts with what the code before it and its runs before leave, and a label with what the
 `goto`s to it leave.
 
-Calls are taken to change no local, but a function runs any time after it is created. Inside it, a
-local declared outside it may hold what it held where the function was created, and also what the
-code after that and the other functions assign, with nothing known about those values. Once a
-function that assigns a local is created, the code around it may find any value that a function
-gives the local, as after `each(list, function(item) found = item end)`. A function written as an
-argument of a runtime function that runs it later, as `SetTimeout`, `CreateThread`,
+As in lua-language-server and TypeScript, calls are taken to change no local, but a function runs
+any time after it is created. Inside it, a local declared outside it may hold what it held where the
+function was created, and also what the code after that and the other functions assign, with
+nothing known about those values. Once a function that assigns a local is created, the code around
+it may find any value that a function gives the local, as after
+`each(list, function(item) found = item end)`. A function written as an argument of a runtime
+function that runs it later, as `SetTimeout`, `CreateThread`,
 `AddEventHandler`, `RegisterNetEvent`, `RegisterCommand`, `RegisterNUICallback`,
 `AddStateBagChangeHandler` and `exports` do, gives the locals around it nothing until a call
 yields.
+
+Without [`strict`](../../docs/reference.md#strict-mode), `impossible-comparison` does not rely on
+a guard past a call that may run that code, as any call does but one of a native or of a function of
+the Lua libraries or CfxLua that calls none it is given, as `print` and `string.format`. After one,
+a local that other functions assign may also hold what they give it, and the fields of any table
+any value of their type:
+
+```lua
+local hits = 0
+local function hit() hits = hits + 1 end
+
+if hits == 0 then
+    hit()
+    if hits == 1 then end -- not always false: `hit()` changes `hits`
+end
+```
 
 A call that yields lets that code run, as the event handlers of a script do while one of its threads
 waits. After one, a local that other code assigns may hold any value that code gives it again, so a
@@ -355,8 +372,9 @@ assignment to a key of one that is not known, as `reset(data)`, `data:reset()`, 
 `local job = data.job`, `clearAll({ data })` or `data[key] = nil`; a call that yields; and a loop
 whose code may do any of these before it starts again. A function does not see what the guards
 around it tell about fields, as it runs later. Other calls are taken to change no field, as
-TypeScript takes them, although the code of another file may assign the fields of a global, and an
-assignment to a field still has to store a value of the type the field is declared with.
+TypeScript takes them, although the code of another file may assign the fields of a global, except
+by `impossible-comparison` as [for locals](#locals-that-are-assigned-again), and an assignment to a
+field still has to store a value of the type the field is declared with.
 
 ### Casts
 

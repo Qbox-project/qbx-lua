@@ -1092,7 +1092,12 @@ local has the types of the values it is declared with or assigned that may reach
 so `local state = GetState()` is checked like the call, and inside a
 [type guard](../crates/qbx_lua_ls/README.md#type-guards) the type the guard narrows it to: the right
 side of `class ~= 13 or class ~= 14` only runs when `class` is `13`, so it is always true. Guards
-narrow the [fields](../crates/qbx_lua_ls/README.md#fields) of locals the same way. A
+narrow the [fields](../crates/qbx_lua_ls/README.md#fields) of locals the same way. Without
+[`strict`](#strict-mode), a guard does not hold past a call that may run code of a script, which
+may change a local that other functions assign, or a field: `hits == 1` passes after `hit()` inside
+`if hits == 0 then` for `local function hit() hits = hits + 1 end`, and so does
+`Machine.state == "busy"` after `TriggerEvent("machine:start")`. Natives and the functions of the
+Lua libraries and CfxLua that call none they are given, as `print`, run no such code. A
 literal stored in a local counts by its kind only: `local mode = 'dev'` is a setting to change, so
 `mode == 'prod'` passes, while `mode == false` is still reported as a `string` compared with
 `false`. A value assigned to a local with a `---@type` or `@param` keeps the parts of that type it

@@ -2767,6 +2767,66 @@ end)
 }
 
 #[test]
+fn comparisons_take_calls_to_run_code_that_changes_locals_and_fields_unless_strict() {
+    let mut client = Client::start(fixture_root());
+    let text = "\
+---@class Probe.Machine
+---@field state 'idle'|'busy'
+
+---@type Probe.Machine
+Machine = { state = 'idle' }
+AddEventHandler('probe:start', function() Machine.state = 'busy' end)
+
+local restarts = 0
+function OnRestart() restarts = restarts + 1 end
+
+function Watch()
+    assert(restarts == 0)
+    Monitor()
+    assert(restarts == 1)
+    print(restarts)
+    assert(restarts == 2)
+end
+
+function Count()
+    local hits = 0
+    local function hit() hits = hits + 1 end
+    if hits == 0 then
+        hit()
+        if hits == 1 then print('one') end
+    end
+end
+
+function Start()
+    if Machine.state ~= 'idle' then return end
+    TriggerEvent('probe:start')
+    if Machine.state == 'busy' then print('started') end
+end
+";
+    client.open_with(CLIENT, text);
+    let finding = |needle: &str, message: &str| {
+        ("impossible-comparison".to_string(), pos(text, needle, 0).0 as u64, message.to_string())
+    };
+    let relaxed = findings(&mut client, CLIENT, &["impossible-comparison"]);
+    assert_eq!(
+        relaxed,
+        [finding("restarts == 2", "Comparing `1` with `2` is always false")],
+        "a call that may run code of a script, as `Monitor()`, `hit()` and `TriggerEvent` may, can change a \
+         local that other functions assign and the fields of any table, while `print` runs none"
+    );
+    client.set_strict(true);
+    assert_eq!(
+        added(&relaxed, &findings(&mut client, CLIENT, &["impossible-comparison"])),
+        [
+            finding("restarts == 1", "Comparing `0` with `1` is always false"),
+            finding("hits == 1", "Comparing `0` with `1` is always false"),
+            finding("Machine.state == 'busy'", "Comparing `\"idle\"` with `\"busy\"` is always false"),
+        ],
+        "with `strict`, as in TypeScript, a call changes no local or field"
+    );
+}
+
+#[test]
 fn functions_that_runtime_functions_run_later_leave_the_narrowing_alone() {
     let mut client = Client::start(fixture_root());
     let text = "\

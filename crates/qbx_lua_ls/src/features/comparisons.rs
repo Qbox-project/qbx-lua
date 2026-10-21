@@ -30,7 +30,7 @@ const MAX_DEPTH: u32 = 16;
 /// Each `==` and `~=` of `chunk` whose sides share no value, with a message naming both types and
 /// the answer the comparison always gives.
 pub fn impossible_comparisons(infer: &Infer, chunk: &Chunk) -> Vec<(Span, String)> {
-    let mut finder = Finder { declared: Declared::new(infer), out: Vec::new() };
+    let mut finder = Finder { declared: Declared::through_calls(infer), out: Vec::new() };
     finder.visit_block(&chunk.block);
     finder.out
 }
@@ -54,6 +54,9 @@ pub struct Declared<'a, 'b> {
     /// `list[i]` or a loop variable has the type it is read as when an annotation declares the table
     /// it comes from.
     annotations_only: bool,
+    /// Whether what the code a call runs, or runs while it yields, gives a local or a field counts
+    /// without `strict`, as `Flow::counts` reads it.
+    through_calls: bool,
     /// Where the expression that each `--[[@as T]]` casts starts, by where it ends.
     cast_starts: OnceCell<FxHashMap<u32, u32>>,
     /// The table whose sequence each numeric `for` variable walks, by the variable.
@@ -77,6 +80,7 @@ impl<'a, 'b> Declared<'a, 'b> {
             keeps_annotations: false,
             returned_nils: false,
             annotations_only: false,
+            through_calls: false,
             cast_starts: OnceCell::new(),
             sequences: OnceCell::new(),
             declarations: RefCell::default(),
@@ -91,6 +95,12 @@ impl<'a, 'b> Declared<'a, 'b> {
     /// rely on.
     pub fn keeping_annotations(infer: &'a Infer<'b>) -> Self {
         Self { keeps_annotations: true, ..Self::new(infer) }
+    }
+
+    /// Does not take a guard to hold after a call that may run code which changes what it tells
+    /// about, as an `impossible-comparison` may not rely on it.
+    pub fn through_calls(infer: &'a Infer<'b>) -> Self {
+        Self { through_calls: true, ..Self::new(infer) }
     }
 
     /// Also takes a function without `@return` at its word where a `return` of it gives `nil` or
@@ -244,6 +254,9 @@ impl<'a, 'b> Declared<'a, 'b> {
     /// another unchecked, as a `nil` assigned in the same function is not.
     fn bases(&self, id: LocalId, origin: u32, depth: u32) -> Option<Bases> {
         let flow = self.infer.ctx.flow();
+        if !flow.counts(origin, self.infer.strict(), self.through_calls) {
+            return None;
+        }
         let Origin::Others(set) = flow.origin(origin) else { return self.origin(id, origin, depth).map(Bases::One) };
         if let Some(types) = self.others.borrow().get(&(id, origin)) {
             return Some(Bases::Set(types.clone()));
@@ -508,7 +521,7 @@ impl<'a, 'b> Declared<'a, 'b> {
     fn narrowed_field(&self, expr: &Expr, ty: Type) -> Type {
         match ty.is_unknown() {
             true => ty,
-            false => self.infer.field_narrowed(expr, ty),
+            false => self.infer.field_narrowed(expr, ty, self.through_calls),
         }
     }
 

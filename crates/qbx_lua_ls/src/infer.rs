@@ -838,8 +838,8 @@ impl<'a> Infer<'a> {
             ExprKind::Function(func) => Type::Fun(Arc::new(self.fun_type(func, None, false))),
             ExprKind::Name(name) => self.name(name),
             ExprKind::Paren(inner) => self.expr(inner),
-            ExprKind::Field { base, name, .. } => self.field_narrowed(expr, self.member_type(base, name)),
-            ExprKind::Index { base, index, .. } => self.field_narrowed(expr, self.index_expr(base, index)),
+            ExprKind::Field { base, name, .. } => self.field_narrowed(expr, self.member_type(base, name), false),
+            ExprKind::Index { base, index, .. } => self.field_narrowed(expr, self.index_expr(base, index), false),
             ExprKind::Table(fields) => self.table(fields),
             ExprKind::Binary { op, lhs, rhs, .. } => self.binary(*op, lhs, rhs),
             ExprKind::Unary { op, expr } => self.unary(*op, expr),
@@ -895,15 +895,24 @@ impl<'a> Infer<'a> {
                 return self.with_metatables(id, offset, given);
             }
         }
-        let origin = |origin| self.origin_bases(id, origin).map(|bases| self.with_metatables_all(id, offset, bases));
+        let origin = |origin| self.counted_bases(id, offset, origin);
         self.narrowed_with(id, offset, &origin, false)
     }
 
     /// The type of a local where it is read at `offset`, as `local_type_at` gives it, or `unknown`
     /// when a value of unknown type may reach the read.
     pub fn known_local_type_at(&self, id: LocalId, offset: u32) -> Type {
-        let origin = |origin| self.origin_bases(id, origin).map(|bases| self.with_metatables_all(id, offset, bases));
+        let origin = |origin| self.counted_bases(id, offset, origin);
         self.narrowed_with(id, offset, &origin, true)
+    }
+
+    /// The types of the values that `origin` gives the local `id` where it is read at `offset`, as
+    /// `origin_bases` finds them with the metatables set on it, unless `Flow::counts` leaves them out.
+    fn counted_bases(&self, id: LocalId, offset: u32, origin: u32) -> Option<Bases> {
+        if !self.ctx.flow().counts(origin, self.strict(), false) {
+            return None;
+        }
+        self.origin_bases(id, origin).map(|bases| self.with_metatables_all(id, offset, bases))
     }
 
     /// Whether an assignment may give the local `id` a value of unknown type that reaches its read at
@@ -918,7 +927,8 @@ impl<'a> Infer<'a> {
             self.ctx.doc_at(stmt.span.start).type_at(index).is_none()
                 && assigned_value(exprs, index, |expr| self.expr(expr), |expr| self.expr_multi(expr)).is_unknown()
         };
-        flow.at(id, offset).iter().any(|value| match flow.origin(value.origin) {
+        let mut counted = flow.at(id, offset).iter().filter(|value| flow.counts(value.origin, self.strict(), false));
+        counted.any(|value| match flow.origin(value.origin) {
             Origin::Others(set) => flow.others(set).iter().any(|origin| unknown(*origin)),
             _ => unknown(value.origin),
         })
@@ -1196,26 +1206,29 @@ impl<'a> Infer<'a> {
     }
 
     /// `ty`, the type of the field of a local that `expr` reads, as `self.target` or `data.job`,
-    /// with what the assignments to it and the guards around the read tell.
-    pub fn field_narrowed(&self, expr: &Expr, ty: Type) -> Type {
+    /// with what the assignments to it and the guards around the read tell, and what the code that
+    /// a call runs gives it as `Flow::counts` picks it `through_calls`.
+    pub fn field_narrowed(&self, expr: &Expr, ty: Type, through_calls: bool) -> Type {
         let flow = self.ctx.flow();
         let Some(field) = flow.path(self.ctx.resolution, expr) else { return ty };
-        self.path_narrowed(field, expr.span.start, ty)
+        self.path_narrowed(field, expr.span.start, ty, through_calls)
     }
 
     /// `ty`, the type of the field `key` read from `base`, as `field_narrowed` gives it.
     pub fn member_narrowed(&self, base: &Expr, key: &str, ty: Type) -> Type {
         let flow = self.ctx.flow();
         let Some(field) = flow.member_path(self.ctx.resolution, base, key) else { return ty };
-        self.path_narrowed(field, base.span.start, ty)
+        self.path_narrowed(field, base.span.start, ty, false)
     }
 
     /// `ty`, the type of the field tracked as `field`, where it is read at `offset`: for each value
-    /// that may reach the read, `ty`, or the part of it that the assignment which gives the value
-    /// stores, without what the guards since rule out.
-    fn path_narrowed(&self, field: LocalId, offset: u32, ty: Type) -> Type {
-        let values = self.ctx.flow().at(field, offset);
-        let types = values.iter().map(|value| {
+    /// that may reach the read and `Flow::counts` picks `through_calls`, `ty`, or the part of it that
+    /// the assignment which gives the value stores, without what the guards since rule out.
+    fn path_narrowed(&self, field: LocalId, offset: u32, ty: Type, through_calls: bool) -> Type {
+        let flow = self.ctx.flow();
+        let values = flow.at(field, offset);
+        let counted = values.iter().filter(|value| flow.counts(value.origin, self.strict(), through_calls));
+        let types = counted.map(|value| {
             let base = match value.origin {
                 DECLARATION => ty.clone(),
                 origin => self.bounded(&ty, &self.stored_value(origin)),

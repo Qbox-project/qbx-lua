@@ -7,6 +7,8 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use qbx_fivem_data::native;
+use qbx_lua_analysis::env::builtins;
 use qbx_lua_analysis::scope::{FuncId, LocalId, Resolution, Resolved, MAIN_CHUNK};
 use qbx_lua_syntax::ast::*;
 use qbx_lua_syntax::visit::{self, Visitor};
@@ -361,13 +363,14 @@ fn name_root(resolution: &Resolution, name: &Name) -> Root {
 
 /// Which of the values given to the locals of a file may reach each point of its code, and what the
 /// guards on the way tell about them. A value reaches the code after the statement that assigns it,
-/// branches join where they meet, and a loop starts with what its runs before leave. Calls are
-/// taken to change no local, but a function runs any time after it is created: inside it, a local
-/// may also hold what the code after its creation and the other functions assign, and once a
-/// function that assigns it is created, the code around may find what any function gives it,
-/// unless a runtime function that runs it later, as `SetTimeout` does, is given it. A call
-/// that yields, as `Wait(0)` does, lets that code run too, so after one the locals it may assign
-/// hold any value it gives them again.
+/// branches join where they meet, and a loop starts with what its runs before leave. A function
+/// runs any time after it is created: inside it, a local may also hold what the code after its
+/// creation and the other functions assign, and once a function that assigns it is created, the
+/// code around may find what any function gives it, unless a runtime function that runs it later,
+/// as `SetTimeout` does, is given it. A call that yields, as `Wait(0)` does, lets that code run
+/// too, so after one the locals it may assign hold any value it gives them again. Another call may
+/// run that code, so after one they may also hold what it gives them, which `Flow::counts` tells
+/// who reads it whether to take.
 ///
 /// The fields of locals and globals that guards test or assignments set, as `self.target`,
 /// `data.job.name` or `Config.Logs.Service`, are narrowed like locals, an assignment giving one the
@@ -375,13 +378,16 @@ fn name_root(resolution: &Resolution, name: &Name) -> Root {
 /// field of the same name of any table; a call that is given, or an assignment for a key that is not
 /// known to, the local or global, a table the field is read through, a local copied from one of them
 /// or a table built with them; a call that yields; or the start of a function, which runs later.
-/// Other calls are taken to change no field, as TypeScript takes them, although the code of another
-/// file may assign a global.
+/// Another call that may run code of a script changes the fields of any table as `Flow::counts`
+/// tells.
 #[derive(Debug)]
 pub struct Flow<'a> {
     origins: Vec<Origin<'a>>,
     /// The origins of the values that each set of `Origin::Others` stands for, in order.
     others: Vec<Rc<[u32]>>,
+    /// The origins of `Origin::Others` that stand for what the code a call runs gives a local or a
+    /// field.
+    called: FxHashSet<u32>,
     /// The origin of the value each assignment gives a local, by the start of the name it assigns.
     written: FxHashMap<u32, u32>,
     /// The origin of the value each assignment gives a field of a local, as `data.job.name = name`
@@ -443,6 +449,7 @@ impl<'a> Flow<'a> {
         let flow = Flow {
             origins,
             others: Vec::new(),
+            called: FxHashSet::default(),
             written,
             stored,
             chained: FxHashMap::default(),
@@ -506,6 +513,13 @@ impl<'a> Flow<'a> {
     /// The origins of the values that the set `set` of `Origin::Others` stands for, in order.
     pub fn others(&self, set: u32) -> &[u32] {
         self.others.get(set as usize).map_or(&[], |origins| &origins[..])
+    }
+
+    /// Whether the values that `origin` gives count. What the code a call runs gives counts only
+    /// `through_calls` and without `strict`: as lua-language-server and TypeScript read them, a guard
+    /// still holds after the call, though an `impossible-comparison` cannot rely on it.
+    pub fn counts(&self, origin: u32, strict: bool, through_calls: bool) -> bool {
+        !self.called.contains(&origin) || (through_calls && !strict)
     }
 
     /// The origins of the values that assignments which read `local` give it, in the order they are
@@ -597,6 +611,9 @@ struct Write {
     func: FuncId,
     origin: u32,
 }
+
+/// Calls by where they start, in order, each with the function it is in.
+type Calls = Vec<(u32, FuncId)>;
 
 /// What the locals that changed since a point of the walk hold, with `Flow::declared` for one that
 /// holds no more than the value of its declaration with nothing known about it.
@@ -691,8 +708,13 @@ struct Walker<'a, 'r> {
     others: FxHashMap<(LocalId, usize), Option<u32>>,
     /// The local and that number of each of those origins.
     others_of: FxHashMap<u32, (LocalId, usize)>,
-    /// The calls that may yield, by where they start, in order, each with the function it is in.
-    yields: Vec<(u32, FuncId)>,
+    /// The calls that may yield.
+    yields: Calls,
+    /// The other calls that may run code of a script.
+    runs: Calls,
+    /// The origins that stand for what the values of a set of `Origin::Others` give once a call runs
+    /// the code that gives them, by the origin of the set, and the one for the fields of any table.
+    called: FxHashMap<Option<u32>, u32>,
     /// The functions that runtime functions are given to run later, by where they start.
     deferred: FxHashSet<u32>,
     aliases: Aliases,
@@ -776,7 +798,7 @@ impl<'a, 'r> Walker<'a, 'r> {
         }
         let functions: FxHashMap<u32, FuncId> =
             resolution.functions.iter().enumerate().skip(1).map(|(id, func)| (func.span.start, id as FuncId)).collect();
-        let yields = Yields::of(chunk, resolution, &functions);
+        let (yields, runs) = Yields::of(chunk, resolution, &functions);
         let mut deferred = Deferred { resolution, out: FxHashSet::default() };
         deferred.visit_block(&chunk.block);
         let mut flow = flow;
@@ -822,6 +844,8 @@ impl<'a, 'r> Walker<'a, 'r> {
             others: FxHashMap::default(),
             others_of: FxHashMap::default(),
             yields,
+            runs,
+            called: FxHashMap::default(),
             deferred: deferred.out,
             aliases: Aliases::default(),
             gotos: FxHashMap::default(),
@@ -884,21 +908,35 @@ impl<'a, 'r> Walker<'a, 'r> {
         kept.chain([Version { origin: others, facts: FactList::default() }]).collect()
     }
 
-    /// Goes on after the call `call`, which lets the code that runs while it yields change what the
-    /// locals hold, when it may.
+    /// Goes on after the call `call`, which lets the code that runs while it yields, or that it
+    /// runs, change what the locals hold, when it may.
     fn call_ended(&mut self, call: &Expr) {
-        let first = self.yields.partition_point(|(at, _)| *at < call.span.start);
-        if self.yields.get(first).is_some_and(|(at, _)| *at == call.span.start) {
-            let yielded = self.yielded(Delta::default());
-            self.apply(call.span.end, &yielded);
-        }
+        let starts = |calls: &[(u32, FuncId)]| {
+            let first = calls.partition_point(|(at, _)| *at < call.span.start);
+            calls.get(first).is_some_and(|(at, _)| *at == call.span.start)
+        };
+        let changed = match starts(&self.yields) {
+            true => self.yielded(Delta::default()),
+            false if starts(&self.runs) => self.called(Delta::default()),
+            false => return,
+        };
+        self.apply(call.span.end, &changed);
+    }
+
+    /// The function being walked.
+    fn func(&self) -> FuncId {
+        self.frames.last().map_or(MAIN_CHUNK, |frame| frame.func)
     }
 
     /// Whether a call in `code` that the function being walked makes may yield.
     fn yields_in(&self, code: Span) -> bool {
-        let func = self.frames.last().map_or(MAIN_CHUNK, |frame| frame.func);
-        let first = self.yields.partition_point(|(at, _)| *at < code.start);
-        self.yields[first..].iter().take_while(|(at, _)| *at < code.end).any(|(_, of)| *of == func)
+        Self::calls_in(&self.yields, code, self.func())
+    }
+
+    /// Whether one of `calls`, by where they start, in order, is in `code` and made by `func`.
+    fn calls_in(calls: &[(u32, FuncId)], code: Span, func: FuncId) -> bool {
+        let first = calls.partition_point(|(at, _)| *at < code.start);
+        calls[first..].iter().take_while(|(at, _)| *at < code.end).any(|(_, of)| *of == func)
     }
 
     /// `delta`, once the function being walked yields: the locals that the code that runs meanwhile
@@ -915,6 +953,48 @@ impl<'a, 'r> Walker<'a, 'r> {
             delta.insert(field, self.flow.declared.clone());
         }
         delta
+    }
+
+    /// `delta`, once the function being walked makes a call that may run code of a script: the
+    /// locals that code running while the function yields may assign, and the fields of any table,
+    /// may hold what that code gives them.
+    fn called(&mut self, mut delta: Delta) -> Delta {
+        let others = self.frames.last().map_or(Vec::new(), |frame| frame.others.clone());
+        for (local, origin) in others {
+            let called = self.called_origin(Some(origin));
+            let values = with_value(&self.values_in(&delta, local), called);
+            delta.insert(local, values);
+        }
+        let fields: Vec<LocalId> =
+            self.fields.iter().copied().chain(delta.keys().copied().filter(|id| self.is_path(*id))).collect();
+        if !fields.is_empty() {
+            let called = self.called_origin(None);
+            for field in fields {
+                let values = with_value(&self.values_in(&delta, field), called);
+                delta.insert(field, values);
+            }
+        }
+        delta
+    }
+
+    /// The origin that stands for the values of the set of `Origin::Others` of `others`, or for a
+    /// field without, once a call that runs the code that gives them ends.
+    fn called_origin(&mut self, others: Option<u32>) -> u32 {
+        if let Some(origin) = self.called.get(&others) {
+            return *origin;
+        }
+        let set = match others.map(|others| self.flow.origin(others)) {
+            Some(Origin::Others(set)) => set,
+            _ => {
+                self.flow.others.push(Rc::from([]));
+                self.flow.others.len() as u32 - 1
+            }
+        };
+        let origin = self.flow.origins.len() as u32;
+        self.flow.origins.push(Origin::Others(set));
+        self.flow.called.insert(origin);
+        self.called.insert(others, origin);
+        origin
     }
 
     /// Notes that `local` holds what `value` gives it, which is a table read from another local when
@@ -1487,7 +1567,11 @@ impl<'a, 'r> Walker<'a, 'r> {
     /// `stmt`, of which `run` walks one from what they hold at its start, giving what changed since
     /// `mark` where it starts again.
     fn loop_start(&mut self, stmt: &Stmt, at: u32, mark: usize, run: impl Fn(&mut Self) -> Option<Delta>) {
-        let entry = self.entry(stmt);
+        let mut entry = self.entry(stmt);
+        // A call in the loop may run code that changes what a run after it starts with.
+        if Self::calls_in(&self.runs, stmt.span, self.func()) {
+            entry = self.called(entry);
+        }
         let first = self.ordered.partition_point(|(start, ..)| *start < stmt.span.start);
         let assigns = self.ordered.get(first).is_some_and(|(start, ..)| *start < stmt.span.end);
         let yields = self.yields_in(stmt.span);
@@ -2138,6 +2222,11 @@ impl<'ast> Visitor<'ast> for Deferred<'_> {
     }
 }
 
+/// The functions of the Lua libraries and CfxLua that call the functions they are given, or the
+/// handlers of an event, before they return.
+const RUNS_GIVEN: [&str; 8] =
+    ["pcall", "xpcall", "require", "dofile", "table.sort", "string.gsub", "coroutine.resume", "TriggerEvent"];
+
 /// What a call calls, as far as telling whether it may yield goes.
 enum Callee {
     Yields,
@@ -2147,7 +2236,7 @@ enum Callee {
 }
 
 /// Finds the calls of a file that may yield: those `is_yield_path` picks, and those of the functions
-/// of the file that make such a call.
+/// of the file that make such a call, and those that may run code of a script.
 struct Yields<'r> {
     resolution: &'r Resolution,
     functions: &'r FxHashMap<u32, FuncId>,
@@ -2159,12 +2248,14 @@ struct Yields<'r> {
     paths: FxHashMap<String, Vec<FuncId>>,
     /// Each call, with where it starts, the function it is in, and what it calls.
     calls: Vec<(u32, FuncId, Callee)>,
+    /// The calls that may run code of a script.
+    runs: Calls,
 }
 
 impl<'r> Yields<'r> {
-    /// The calls of `chunk` that may yield, by where they start, in order, each with the function it
-    /// is in.
-    fn of(chunk: &Chunk, resolution: &'r Resolution, functions: &'r FxHashMap<u32, FuncId>) -> Vec<(u32, FuncId)> {
+    /// The calls of `chunk` that may yield, and the others that may run code of a script, by where
+    /// they start, in order, each with the function it is in.
+    fn of(chunk: &Chunk, resolution: &'r Resolution, functions: &'r FxHashMap<u32, FuncId>) -> (Calls, Calls) {
         let mut finder = Yields {
             resolution,
             functions,
@@ -2172,6 +2263,7 @@ impl<'r> Yields<'r> {
             locals: FxHashMap::default(),
             paths: FxHashMap::default(),
             calls: Vec::new(),
+            runs: Vec::new(),
         };
         finder.visit_block(&chunk.block);
         let mut yielding: FxHashSet<FuncId> = FxHashSet::default();
@@ -2189,7 +2281,9 @@ impl<'r> Yields<'r> {
         let calls = finder.calls.iter().filter(|(_, _, callee)| finder.yields(callee, &yielding));
         let mut calls: Vec<(u32, FuncId)> = calls.map(|(at, func, _)| (*at, *func)).collect();
         calls.sort_unstable();
-        calls
+        let mut runs = finder.runs;
+        runs.sort_unstable();
+        (calls, runs)
     }
 
     /// Whether a call of `callee` may yield, when the functions of the file in `yielding` do.
@@ -2208,6 +2302,25 @@ impl<'r> Yields<'r> {
             Some(Resolved::Local(local)) => Some(local),
             _ => None,
         }
+    }
+
+    /// Whether a call of `callee` runs no code of a script: it calls a native, or a function of the
+    /// Lua libraries or CfxLua that calls none it is given, as `print` and `string.format` do.
+    fn runs_no_code(&self, callee: &Expr) -> bool {
+        let Some(path) = callee.dotted_path() else { return false };
+        let mut names = path.split('.');
+        let (Some(root), field, None) = (names.next(), names.next(), names.next()) else { return false };
+        let mut base = callee.unparen();
+        while let ExprKind::Field { base: inner, .. } = &base.kind {
+            base = inner.unparen();
+        }
+        let ExprKind::Name(name) = &base.kind else { return false };
+        if self.local(name).is_some() || RUNS_GIVEN.contains(&path.as_str()) {
+            return false;
+        }
+        let builtin =
+            builtins().get(root).is_some_and(|global| field.is_none_or(|field| global.fields.contains(field)));
+        builtin || (field.is_none() && native(root).is_some())
     }
 
     /// The local that `expr` names.
@@ -2292,6 +2405,14 @@ impl<'ast> Visitor<'ast> for Yields<'_> {
         };
         if let Some(callee) = callee {
             self.calls.push((expr.span.start, self.func, callee));
+        }
+        let runs = match &expr.kind {
+            ExprKind::Call { callee, .. } => !self.runs_no_code(callee),
+            ExprKind::MethodCall { .. } => true,
+            _ => false,
+        };
+        if runs {
+            self.runs.push((expr.span.start, self.func));
         }
         visit::walk_expr(self, expr);
     }
@@ -2454,6 +2575,15 @@ fn joined(a: &Values, b: &Values) -> Values {
         .collect();
     out.extend(b.iter().filter(|other| !a.iter().any(|value| value.origin == other.origin)).cloned());
     out.into()
+}
+
+/// `values` where the local may also hold any value of `origin`, with nothing known about it.
+fn with_value(values: &Values, origin: u32) -> Values {
+    if values.iter().any(|value| value.origin == origin && value.facts.is_empty()) {
+        return values.clone();
+    }
+    let kept = values.iter().filter(|value| value.origin != origin).cloned();
+    kept.chain([Version { origin, facts: FactList::default() }]).collect()
 }
 
 /// The facts of `a` that `b` has too, each from where it starts to hold in `a`, so that the start of
