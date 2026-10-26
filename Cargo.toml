@@ -21,17 +21,17 @@ default-members = [
 ]
 
 [workspace.package]
-version = "1.0.6"
+version = "1.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Qbox-project/qbx-lua"
 
 [workspace.dependencies]
-qbx_lua_syntax = { version = "=1.0.6", path = "crates/qbx_lua_syntax" }
-qbx_lua_fmt = { version = "=1.0.6", path = "crates/qbx_lua_fmt" }
-qbx_luacats = { version = "=1.0.6", path = "crates/qbx_luacats" }
-qbx_lua_analysis = { version = "=1.0.6", path = "crates/qbx_lua_analysis" }
-qbx_fivem_data = { version = "=1.0.6", path = "crates/qbx_fivem_data" }
+qbx_lua_syntax = { version = "=1.1.0", path = "crates/qbx_lua_syntax" }
+qbx_lua_fmt = { version = "=1.1.0", path = "crates/qbx_lua_fmt" }
+qbx_luacats = { version = "=1.1.0", path = "crates/qbx_luacats" }
+qbx_lua_analysis = { version = "=1.1.0", path = "crates/qbx_lua_analysis" }
+qbx_fivem_data = { version = "=1.1.0", path = "crates/qbx_fivem_data" }
 smol_str = "0.3"
 rustc-hash = "2"
 

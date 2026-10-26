@@ -157,9 +157,9 @@ Use the suite's lint action in your workflow:
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Qbox-project/qbx-lua@v1.0.6
+- uses: Qbox-project/qbx-lua@v1.1.0
   with:
-    version: v1.0.6
+    version: v1.1.0
     paths: .
     args: --max-warnings 0
 ```
@@ -168,7 +168,7 @@ The action emits GitHub annotations and writes a SARIF report. See
 [examples/lint.yml](examples/lint.yml) and [action.yml](action.yml) for its inputs and output.
 
 If you previously used `Qbox-project/qbx-lint@...`, change it to
-`Qbox-project/qbx-lua@v1.0.6`. GitHub does not redirect Action references after repository renames;
+`Qbox-project/qbx-lua@v1.1.0`. GitHub does not redirect Action references after repository renames;
 see the [migration notes](docs/repository-migration.md#repository-rename-and-github-action).
 
 ## Limits
