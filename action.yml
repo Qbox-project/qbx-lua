@@ -13,7 +13,7 @@ inputs:
     default: ""
   version:
     description: Release tag to download, or "latest"
-    default: v1.0.6
+    default: v1.1.0
   fail-on-error:
     description: Fail the job when errors are found
     default: "true"

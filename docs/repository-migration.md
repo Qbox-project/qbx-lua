@@ -101,7 +101,7 @@ GitHub Actions does **not** follow repository-name redirects. Update workflows f
 `uses: Qbox-project/qbx-lint@...` to:
 
 ```yaml
-- uses: Qbox-project/qbx-lua@v1.0.6
+- uses: Qbox-project/qbx-lua@v1.1.0
   with:
     paths: .
 ```
