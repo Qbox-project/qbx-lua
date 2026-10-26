@@ -326,6 +326,80 @@ fn configured_ox_lib_imports_supply_extensions_and_cache_checks_by_side() {
 }
 
 #[test]
+fn an_ox_core_import_loads_ox_lib_on_its_side() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "shop/client.lua",
+        "lib.notify({ description = 'hello' })\nprint(cache.ped, table.contains({}, 1), PlayerPedId())\n",
+    );
+    fixture.write("shop/server.lua", "print(lib.context, table.contains({}, 1), exports.ox_lib:locale())\n");
+    fixture
+        .write("qbxlint.toml", "[rules]\n'qbox/prefer-cache' = 'warning'\n'manifest/missing-dependency' = 'warning'\n");
+    for side in [None, Some("shared"), Some("client"), Some("server")] {
+        let import = side.map_or(String::new(), |side| format!("{side}_script '@ox_core/lib/init.lua'\n"));
+        fixture.write(
+            "shop/fxmanifest.lua",
+            format!(
+                "fx_version 'cerulean'\ngame 'gta5'\n{import}client_script 'client.lua'\nserver_script 'server.lua'\n"
+            ),
+        );
+        let output = fixture.run(&["--format", "json", "--no-fail", "shop"]);
+        assert_success(&output);
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        for file in json["files"].as_array().unwrap() {
+            let path = file["path"].as_str().unwrap().replace('\\', "/");
+            let client = path.ends_with("/client.lua");
+            if !client && !path.ends_with("/server.lua") {
+                continue;
+            }
+            let codes: Vec<&str> =
+                file["diagnostics"].as_array().unwrap().iter().map(|d| d["code"].as_str().unwrap()).collect();
+            let available = side == Some("shared") || side == Some(if client { "client" } else { "server" });
+            assert_eq!(codes.contains(&"fivem/import-not-declared"), !available, "{side:?}: {file}");
+            assert_eq!(codes.contains(&"undefined-field"), !available, "{side:?}: {file}");
+            assert_eq!(codes.contains(&"qbox/prefer-cache"), client && available, "{side:?}: {file}");
+            if !client {
+                assert_eq!(codes.contains(&"manifest/missing-dependency"), side.is_none(), "{side:?}: {file}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_ox_core_lib_file_sees_ox_lib_in_the_resources_that_import_it() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "resources/[ox]/ox_core/fxmanifest.lua",
+        "fx_version 'cerulean'\ngame 'gta5'\nclient_script 'dist/client.js'\nserver_script 'dist/server.js'\n\
+         files { 'lib/init.lua' }\n",
+    );
+    fixture.write(
+        "resources/[ox]/ox_core/lib/init.lua",
+        "if not lib then\n    load(LoadResourceFile('ox_lib', 'init.lua'), '@@ox_lib/init.lua', 't')()\nend\n\n\
+         Ox = setmetatable({}, {})\n\nrequire(('@ox_core.lib.%s.init'):format(lib.context))\n",
+    );
+    fixture.write(
+        "resources/shop/fxmanifest.lua",
+        "fx_version 'cerulean'\ngame 'gta5'\nshared_script '@ox_core/lib/init.lua'\nclient_script 'client.lua'\n",
+    );
+    fixture.write("resources/shop/client.lua", "lib.notify({ description = 'hello' })\nprint(cache.ped, Ox)\n");
+    let output = fixture.run(&["--format", "json", "--no-fail", "resources"]);
+    assert_success(&output);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut reported: Vec<String> = Vec::new();
+    for file in json["files"].as_array().unwrap() {
+        let path = file["path"].as_str().unwrap().replace('\\', "/");
+        for diagnostic in file["diagnostics"].as_array().unwrap() {
+            let code = diagnostic["code"].as_str().unwrap();
+            if matches!(code, "fivem/import-not-declared" | "undefined-global") {
+                reported.push(format!("{path} {code}"));
+            }
+        }
+    }
+    assert!(reported.is_empty(), "{reported:?}");
+}
+
+#[test]
 fn lua_ls_settings_apply_when_no_qbxlint_toml_exists() {
     let fixture = Fixture::new();
     fixture.write(

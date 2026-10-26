@@ -6,7 +6,7 @@ use rustc_hash::FxHashSet;
 
 use super::{FileInput, Sink};
 use crate::crossref::{trigger_target, Arity, CrossRefs, EventRegistration};
-use crate::project::side_of;
+use crate::project::{side_of, with_loaded_imports};
 use crate::rules;
 use crate::scope::Resolved;
 use crate::side_guard::SideRegions;
@@ -243,7 +243,9 @@ impl CrossFile<'_, '_> {
     fn dependency(&mut self, resource: &SmolStr, at: &Expr) {
         let Some(own) = self.input.resource else { return };
         let listed = own.manifest.dependencies.iter().any(|d| d.value.trim_start_matches('/') == resource.as_str());
-        let imported = own.manifest.imports().any(|s| s.pattern.starts_with(&format!("@{resource}/")));
+        let imports = own.manifest.imports().map(|s| (s.pattern.as_str(), s.side)).collect();
+        let imported =
+            with_loaded_imports(imports).iter().any(|(pattern, _)| pattern.starts_with(&format!("@{resource}/")));
         // `if GetResourceState('x') == 'started'` marks an optional integration, not a hard dependency.
         let guarded = self.mentions_resource_state
             && self

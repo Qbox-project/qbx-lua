@@ -85,7 +85,7 @@ TypeScript's strict mode does; see [Strict mode](reference.md#strict-mode).
 | Rule | Default | Check |
 | --- | --- | --- |
 | `fivem/native-wrong-side` | error | A native or runtime global is used on a side that lacks it, such as `TriggerClientEvent` in a client script. Names of one side, natives, runtime globals such as the server's `io` and `os` libraries, and globals that the resource defines in the scripts of one side only, are reported in a shared script where its code runs while it loads, outside functions or in a thread `CreateThread` or `SetTimeout` starts then; with `strict`, anywhere in it. An `IsDuplicityVersion()`, `lib.context`, `if os then` or `os and ...` guard keeps the code on one side. |
-| `fivem/import-not-declared` | warning | A library global is used without its manifest import on that side. |
+| `fivem/import-not-declared` | warning | A library global is used without its manifest import on that side. An import that runs another one counts for it, as `@ox_core/lib/init.lua` does for `@ox_lib/init.lua`. |
 | `fivem/loop-never-yields` | error | An apparently infinite loop has no recognized yield or exit. |
 | `fivem/source-after-yield` | warning | Global `source` is read after a yield or in a deferred callback. |
 | `fivem/citizen-prefix` | info | A `Citizen` call has a shorter global alias. Fix available. |

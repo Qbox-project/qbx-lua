@@ -16994,3 +16994,64 @@ print(always, maybe, built, flagged)
         );
     }
 }
+
+#[test]
+fn an_ox_core_import_loads_ox_lib_and_indexes_it() {
+    let workspace = TempWorkspace::new(
+        "ox_core_import",
+        &[
+            ("resources/ox_lib/fxmanifest.lua", "fx_version 'cerulean'\ngame 'gta5'\nshared_script 'init.lua'\n"),
+            (
+                "resources/ox_lib/init.lua",
+                "lib = {}\n\n---@param data { description: string }\nfunction lib.notify(data) end\n",
+            ),
+            ("resources/[ox]/ox_core/fxmanifest.lua", "fx_version 'cerulean'\ngame 'gta5'\nfiles { 'lib/init.lua' }\n"),
+            (
+                "resources/[ox]/ox_core/lib/init.lua",
+                "if not lib then\n    load(LoadResourceFile('ox_lib', 'init.lua'), '@@ox_lib/init.lua', 't')()\nend\n\nOx = {}\n",
+            ),
+            (
+                "resources/shop/fxmanifest.lua",
+                "fx_version 'cerulean'\ngame 'gta5'\nshared_script '@ox_core/lib/init.lua'\nclient_script 'client.lua'\n",
+            ),
+            ("resources/shop/client.lua", "lib.notify({ description = 'hello' })\nprint(cache.ped, Ox)\n"),
+        ],
+    );
+    let mut client = Client::start(workspace.0.join("resources/shop"));
+    let text = client.open("client.lua");
+    assert_eq!(findings(&mut client, "client.lua", &["fivem/import-not-declared", "undefined-global"]), []);
+    let (l, c) = pos(&text, "notify", 0);
+    let definition = client.request("textDocument/definition", client.position_params("client.lua", l, c));
+    let location = definition.as_array().and_then(|list| list.first().cloned()).unwrap_or_else(|| definition.clone());
+    let uri = location["uri"].as_str().or(location["targetUri"].as_str()).unwrap_or_default();
+    assert!(uri.ends_with("ox_lib/init.lua"), "ox_lib is indexed through the ox_core import: {definition}");
+    let hover = client.hover_text("client.lua", l, c);
+    assert!(hover.contains("notify(data"), "{hover}");
+}
+
+#[test]
+fn definition_files_of_ox_lib_reach_resources_that_import_ox_core() {
+    let manifest = |import: &str| format!("fx_version 'cerulean'\ngame 'gta5'\n{import}client_script 'client.lua'\n");
+    let workspace = TempWorkspace::new(
+        "ox_lib_types",
+        &[
+            ("types/ox_lib/shared.lua", "---@meta\n\n---@return string\nfunction LibHelper() end\n"),
+            ("workspace/shop/fxmanifest.lua", &manifest("shared_script '@ox_core/lib/init.lua'\n")),
+            ("workspace/shop/client.lua", "local greeting = LibHelper()\nprint(greeting)\n"),
+            ("workspace/plain/fxmanifest.lua", &manifest("")),
+            ("workspace/plain/client.lua", "local greeting = LibHelper()\nprint(greeting)\n"),
+        ],
+    );
+    let mut client = Client::start_with_library(workspace.0.join("workspace"), &workspace.0.join("types"));
+    let text = client.open("shop/client.lua");
+    assert_eq!(findings(&mut client, "shop/client.lua", &["undefined-global", "fivem/import-not-declared"]), []);
+    let (l, c) = pos(&text, "greeting", 0);
+    let hover = client.hover_text("shop/client.lua", l, c);
+    assert!(hover.contains("local greeting: string"), "declared for ox_lib, which the ox_core import runs: {hover}");
+    client.open("plain/client.lua");
+    let found = findings(&mut client, "plain/client.lua", &["undefined-global"]);
+    let messages: Vec<&str> = found.iter().map(|(_, _, message)| message.as_str()).collect();
+    assert_eq!(messages, ["undefined global 'LibHelper'"], "no import of plain runs ox_lib");
+    let hover = client.hover_text("plain/client.lua", l, c);
+    assert!(!hover.contains("string"), "{hover}");
+}
