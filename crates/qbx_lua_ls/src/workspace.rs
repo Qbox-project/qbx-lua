@@ -6,7 +6,7 @@ use qbx_lua_analysis::glob::{is_glob, manifest_glob_match};
 use qbx_lua_analysis::manifest::Manifest;
 use qbx_lua_analysis::project::{
     find_manifest_dir, import_loads, is_manifest_file, lua_files_under, manifest_path, read_source,
-    relative_slash_path, resource_imports, side_of, split_import, ResourceEnv, ResourceLocator,
+    relative_slash_path, resource_imports, side_of, split_import, with_loaded_imports, ResourceEnv, ResourceLocator,
 };
 use qbx_lua_analysis::scope::resolve;
 use qbx_lua_analysis::Config;
@@ -159,8 +159,9 @@ impl Workspace {
     fn index_dependencies(&mut self) -> usize {
         let mut wanted: Vec<(PathBuf, SmolStr)> = Vec::new();
         for resource in &self.index.resources {
-            let configured = self.lint_config.imports_for(&resource.manifest_path).into_iter().map(|(p, _)| p);
-            let patterns = resource.manifest.imports().map(|s| s.pattern.as_str()).chain(configured);
+            let configured = self.lint_config.imports_for(&resource.manifest_path);
+            let listed = resource.manifest.imports().map(|s| (s.pattern.as_str(), s.side)).chain(configured).collect();
+            let patterns = with_loaded_imports(listed).into_iter().map(|(pattern, _)| pattern);
             let imports = patterns.filter_map(split_import).map(|(name, _)| name);
             let dependencies = resource.manifest.dependencies.iter().map(|d| d.value.as_str());
             for name in imports.chain(dependencies) {

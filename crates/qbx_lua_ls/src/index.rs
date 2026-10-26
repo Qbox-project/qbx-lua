@@ -6,7 +6,7 @@ use lsp_types::{Range, Url};
 use qbx_fivem_data::Side;
 use qbx_lua_analysis::crossref::Arity;
 use qbx_lua_analysis::manifest::Manifest;
-use qbx_lua_analysis::project::{split_import, Declaration, Declarations};
+use qbx_lua_analysis::project::{split_import, with_loaded_imports, Declaration, Declarations};
 use qbx_lua_analysis::summary::FileSummary;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -966,9 +966,10 @@ impl Index {
     fn imports_from(&self, from: FileId, source: &FileEntry, provider: &str) -> bool {
         let Some(resource) = source.resource else { return true };
         let imports = |resource: &ResourceEntry| {
-            resource.manifest.imports().any(|script| {
-                split_import(&script.pattern).is_some_and(|(name, _)| name.eq_ignore_ascii_case(provider))
-                    && source.side.is_none_or(|side| script.side.is_available_on(side))
+            let listed = resource.manifest.imports().map(|script| (script.pattern.as_str(), script.side)).collect();
+            with_loaded_imports(listed).into_iter().any(|(pattern, side)| {
+                split_import(pattern).is_some_and(|(name, _)| name.eq_ignore_ascii_case(provider))
+                    && source.side.is_none_or(|s| side.is_available_on(s))
             })
         };
         std::iter::once(&resource).chain(self.loaders_of(from)).filter_map(|id| self.resource(*id)).any(imports)

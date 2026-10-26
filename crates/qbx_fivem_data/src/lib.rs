@@ -311,6 +311,9 @@ pub fn builtin_event(name: &str) -> Option<BuiltinEvent> {
 pub struct KnownImport {
     pub path: &'static str,
     pub globals: &'static [&'static str],
+    /// The imports the file runs itself, as `@ox_core/lib/init.lua` runs `@ox_lib/init.lua` when
+    /// `lib` is not defined yet, so loading it loads them too.
+    pub loads: &'static [&'static str],
 }
 
 /// Globals provided by commonly imported `@resource/file.lua` scripts, used when the
@@ -319,25 +322,30 @@ pub static KNOWN_IMPORTS: &[KnownImport] = &[
     KnownImport {
         path: "@ox_lib/init.lua",
         globals: &["lib", "cache", "locale", "require", "SetInterval", "ClearInterval"],
+        loads: &[],
     },
-    KnownImport { path: "@oxmysql/lib/MySQL.lua", globals: &["MySQL"] },
-    KnownImport { path: "@qbx_core/modules/lib.lua", globals: &["qbx"] },
-    KnownImport { path: "@qbx_core/modules/playerdata.lua", globals: &["QBX"] },
-    KnownImport { path: "@qbx_core/shared/locale.lua", globals: &["Lang", "Locale"] },
-    KnownImport { path: "@qb-core/shared/locale.lua", globals: &["Lang", "Locale"] },
-    KnownImport { path: "@es_extended/imports.lua", globals: &["ESX"] },
-    KnownImport { path: "@es_extended/locale.lua", globals: &["Locales", "Translate", "TranslateCap", "_U", "_"] },
-    KnownImport { path: "@ox_core/lib/init.lua", globals: &["Ox"] },
-    KnownImport { path: "@ox_core/imports/client.lua", globals: &["Ox", "player", "NetEventHandler"] },
-    KnownImport { path: "@ox_core/imports/server.lua", globals: &["Ox"] },
-    KnownImport { path: "@PolyZone/client.lua", globals: &["PolyZone"] },
-    KnownImport { path: "@PolyZone/BoxZone.lua", globals: &["BoxZone"] },
-    KnownImport { path: "@PolyZone/CircleZone.lua", globals: &["CircleZone"] },
-    KnownImport { path: "@PolyZone/ComboZone.lua", globals: &["ComboZone"] },
-    KnownImport { path: "@PolyZone/EntityZone.lua", globals: &["EntityZone"] },
-    KnownImport { path: "@menuv/menuv.lua", globals: &["MenuV"] },
-    KnownImport { path: "@mysql-async/lib/MySQL.lua", globals: &["MySQL"] },
-    KnownImport { path: "@async/async.lua", globals: &["Async"] },
+    KnownImport { path: "@oxmysql/lib/MySQL.lua", globals: &["MySQL"], loads: &[] },
+    KnownImport { path: "@qbx_core/modules/lib.lua", globals: &["qbx"], loads: &[] },
+    KnownImport { path: "@qbx_core/modules/playerdata.lua", globals: &["QBX"], loads: &[] },
+    KnownImport { path: "@qbx_core/shared/locale.lua", globals: &["Lang", "Locale"], loads: &[] },
+    KnownImport { path: "@qb-core/shared/locale.lua", globals: &["Lang", "Locale"], loads: &[] },
+    KnownImport { path: "@es_extended/imports.lua", globals: &["ESX"], loads: &[] },
+    KnownImport {
+        path: "@es_extended/locale.lua",
+        globals: &["Locales", "Translate", "TranslateCap", "_U", "_"],
+        loads: &[],
+    },
+    KnownImport { path: "@ox_core/lib/init.lua", globals: &["Ox"], loads: &["@ox_lib/init.lua"] },
+    KnownImport { path: "@ox_core/imports/client.lua", globals: &["Ox", "player", "NetEventHandler"], loads: &[] },
+    KnownImport { path: "@ox_core/imports/server.lua", globals: &["Ox"], loads: &[] },
+    KnownImport { path: "@PolyZone/client.lua", globals: &["PolyZone"], loads: &[] },
+    KnownImport { path: "@PolyZone/BoxZone.lua", globals: &["BoxZone"], loads: &[] },
+    KnownImport { path: "@PolyZone/CircleZone.lua", globals: &["CircleZone"], loads: &[] },
+    KnownImport { path: "@PolyZone/ComboZone.lua", globals: &["ComboZone"], loads: &[] },
+    KnownImport { path: "@PolyZone/EntityZone.lua", globals: &["EntityZone"], loads: &[] },
+    KnownImport { path: "@menuv/menuv.lua", globals: &["MenuV"], loads: &[] },
+    KnownImport { path: "@mysql-async/lib/MySQL.lua", globals: &["MySQL"], loads: &[] },
+    KnownImport { path: "@async/async.lua", globals: &["Async"], loads: &[] },
 ];
 
 pub fn known_import(path: &str) -> Option<&'static KnownImport> {

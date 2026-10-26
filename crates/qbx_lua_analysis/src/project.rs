@@ -436,10 +436,29 @@ impl ResourceEnv {
 }
 
 /// Every Lua import of a resource with the side it runs on: the `@resource/path` entries of its
-/// manifest, then the `imports` the configuration adds for files it loads at runtime.
+/// manifest, then the `imports` the configuration adds for files it loads at runtime, then the
+/// imports that well-known ones among them run themselves.
 pub fn resource_imports<'a>(manifest: &'a Manifest, manifest_path: &Path, config: &'a Config) -> Vec<(&'a str, Side)> {
     let own = manifest.imports().filter(|s| s.is_lua()).map(|s| (s.pattern.as_str(), s.side));
-    own.chain(config.imports_for(manifest_path)).collect()
+    with_loaded_imports(own.chain(config.imports_for(manifest_path)).collect())
+}
+
+/// `imports`, then the imports that well-known ones among them run themselves, as
+/// `@ox_core/lib/init.lua` runs `@ox_lib/init.lua`, each on the side of the import that runs it,
+/// unless an entry already loads it there.
+pub fn with_loaded_imports(imports: Vec<(&str, Side)>) -> Vec<(&str, Side)> {
+    let mut all = imports;
+    let mut next = 0;
+    while let Some(&(pattern, side)) = all.get(next) {
+        next += 1;
+        for loaded in known_import(pattern).into_iter().flat_map(|known| known.loads.iter().copied()) {
+            let covered = all.iter().any(|(p, s)| p.eq_ignore_ascii_case(loaded) && (*s == Side::Shared || *s == side));
+            if !covered {
+                all.push((loaded, side));
+            }
+        }
+    }
+    all
 }
 
 /// Finds sibling resources by name so `@resource/file.lua` imports can be followed, and keeps
@@ -794,5 +813,26 @@ mod tests {
         env.add_import("@ox_core/lib/init.lua", Side::Shared, []);
         assert!(env.declares("vehicle", Some(Side::Server)) && env.declares("vehicle", None));
         assert!(!env.declares("vehicle", Some(Side::Client)), "declared for the server");
+    }
+
+    #[test]
+    fn imports_load_what_well_known_ones_run_themselves() {
+        let ox_core = "@ox_core/lib/init.lua";
+        let ox_lib = "@ox_lib/init.lua";
+        let loaded = |imports: &[(&'static str, Side)]| with_loaded_imports(imports.to_vec());
+        assert_eq!(loaded(&[(ox_core, Side::Shared)]), [(ox_core, Side::Shared), (ox_lib, Side::Shared)]);
+        assert_eq!(loaded(&[(ox_core, Side::Client)]), [(ox_core, Side::Client), (ox_lib, Side::Client)]);
+        assert_eq!(loaded(&[("@OX_CORE/lib/init.lua", Side::Server)]).last(), Some(&(ox_lib, Side::Server)));
+        assert_eq!(
+            loaded(&[("@OX_LIB/init.lua", Side::Shared), (ox_core, Side::Client)]),
+            [("@OX_LIB/init.lua", Side::Shared), (ox_core, Side::Client)],
+            "listed already, for every side"
+        );
+        assert_eq!(
+            loaded(&[(ox_lib, Side::Client), (ox_core, Side::Shared)]),
+            [(ox_lib, Side::Client), (ox_core, Side::Shared), (ox_lib, Side::Shared)],
+            "listed for the client only, while ox_core runs it on the server too"
+        );
+        assert_eq!(loaded(&[("@oxmysql/lib/MySQL.lua", Side::Server)]).len(), 1);
     }
 }

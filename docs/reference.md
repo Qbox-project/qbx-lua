@@ -173,6 +173,11 @@ An import is read from a sibling resource when available. Otherwise, known impor
 usual globals, such as `lib` and `cache` for `@ox_lib/init.lua`, `MySQL` for
 `@oxmysql/lib/MySQL.lua`, and `qbx` for `@qbx_core/modules/lib.lua`.
 
+An import that runs another one itself loads it too, on the same side: `@ox_core/lib/init.lua`
+runs `@ox_lib/init.lua` when `lib` is not defined yet, so a resource that imports it gets `lib`
+and `cache`, the ox_lib checks and the ox_lib definition files without an `@ox_lib/init.lua`
+entry of its own.
+
 ### Runtime imports
 
 Some resources run code from another resource without an fxmanifest.lua entry, for example a
@@ -299,7 +304,8 @@ definition file applies:
 - A file inside a folder named after a resource, one the workspace has or imports from, or one of
   the well-known imports such as `ox_core` or `qbx_core`, declares what that resource's imports
   provide. Its globals only reach resources that load a file of that resource on the script's side,
-  through the manifest, configured `imports`, `lib.load` or `require`. A library holding
+  through the manifest, configured `imports`, `lib.load` or `require`, or through an import that
+  runs one itself, as `@ox_core/lib/init.lua` runs `@ox_lib/init.lua`. A library holding
   `ox_core/server_vehicle.lua` with `vehicle = {}` thus declares `vehicle` for the server scripts
   of resources that import `@ox_core/lib/init.lua`, and `undefined-global` still reports it
   anywhere else.
