@@ -567,6 +567,17 @@ impl Server {
         self.stale_resources.insert(resource);
     }
 
+    /// The resource `path` belongs to: that of its indexed file, or else the innermost resource
+    /// folder it is in.
+    fn resource_at(&self, path: &std::path::Path) -> Option<crate::index::ResourceId> {
+        if let Some(file) = self.ws.index.file_id(path).and_then(|id| self.ws.index.file(id)) {
+            return file.resource;
+        }
+        let resources = self.ws.index.resources.iter().enumerate();
+        let containing = resources.filter(|(_, resource)| path.starts_with(&resource.root));
+        containing.max_by_key(|(_, resource)| resource.root.components().count()).map(|(id, _)| id as u32)
+    }
+
     fn publish(&self, uri: &Url, crossrefs: &qbx_lua_analysis::crossref::CrossRefs) {
         let Some(doc) = self.docs.get(uri) else { return };
         let diagnostics = if self.settings.diagnostics.enable.unwrap_or(true) {
@@ -674,10 +685,27 @@ impl Server {
     }
 
     fn watched_files_changed(&mut self, changes: Vec<FileEvent>) {
+        // Saving an open document also writes it to disk, which the client reports here as well. The
+        // save already marked what it changes as stale, so the write changes nothing more.
+        let open: FxHashSet<PathBuf> = self.docs.values().map(|doc| normalize_path(&doc.path)).collect();
+        let changes: Vec<FileEvent> = changes
+            .into_iter()
+            .filter(|change| {
+                change.typ != FileChangeType::CHANGED
+                    || !uri_to_path(&change.uri).is_some_and(|path| open.contains(&normalize_path(&path)))
+            })
+            .collect();
+        if changes.is_empty() {
+            return;
+        }
         // Manifests, the configured imports and new files that a glob import names change which
         // files each resource imports.
         let mut relink = false;
         let mut config_changed = false;
+        // Server configs change the convars every file may read, so everything is checked again.
+        let mut everything = false;
+        // The resources the changed files belong to, whose other files and locale keys may follow.
+        let mut resources: FxHashSet<Option<crate::index::ResourceId>> = FxHashSet::default();
         // The files that read what a changed file declares follow it, whatever order the changes came
         // in. The readers of what a deleted file declared can only be found while it is indexed.
         let deleted: Changes = changes
@@ -692,6 +720,7 @@ impl Server {
             let Some(path) = uri_to_path(&change.uri) else { continue };
             if path.extension().is_some_and(|e| e == "cfg") {
                 qbx_lua_analysis::startup::clear_cache();
+                everything = true;
             } else if path.extension().is_some_and(|e| e == "toml") || is_lua_ls_config(&path) {
                 config_changed = true;
             } else if is_manifest_file(&path) {
@@ -700,12 +729,26 @@ impl Server {
                 self.ws.reload_manifest(&path);
                 relink = true;
             } else if change.typ == FileChangeType::DELETED {
+                resources.insert(self.resource_at(&path));
+                let indexed = self.ws.index.file_id(&path).and_then(|id| self.ws.index.file(id)).map(|f| f.uri.clone());
                 self.ws.index.remove_file(&path);
+                // Nothing checks a file that is gone again, so what it showed is cleared here, under
+                // the index's spelling of its URI as well as the client's.
+                for uri in indexed.into_iter().chain([change.uri]) {
+                    if self.workspace_reported.remove(&uri) {
+                        let cleared = PublishDiagnosticsParams { uri, diagnostics: Vec::new(), version: None };
+                        self.notify::<notif::PublishDiagnostics>(cleared);
+                    }
+                }
             } else if path.extension().is_some_and(|e| e == "lua") {
                 if !self.docs.contains_key(&change.uri) {
                     self.ws.index_path_tracked(&path, FileOrigin::Workspace, &mut changed);
                 }
                 relink |= change.typ == FileChangeType::CREATED;
+                resources.insert(self.resource_at(&path));
+            } else {
+                // A locale file changes which keys the scripts of its resource may use.
+                resources.insert(self.resource_at(&path));
             }
         }
         if config_changed {
@@ -719,8 +762,18 @@ impl Server {
             self.ws.link_imports();
         }
         stale.extend(self.ws.index.readers_of(&changed, &FxHashSet::default()));
-        self.ws.refresh_readers(stale, &self.open_files(), MAX_INDEX_PASSES);
-        self.workspace_stale = true;
+        let refreshed = self.ws.refresh_readers(stale, &self.open_files(), MAX_INDEX_PASSES);
+        if everything || relink || config_changed {
+            self.workspace_stale = true;
+        } else {
+            // Only the resources of the changed files, the readers of what they declare and the
+            // resources of those that now declare something differently are checked again, as after
+            // a save: checking the whole workspace takes seconds in a large one.
+            let changed = refreshed.changed.iter().filter_map(|id| self.ws.index.file(*id));
+            resources.extend(changed.map(|file| file.resource));
+            self.stale_resources.extend(resources);
+            self.stale_files.extend(refreshed.reached);
+        }
         self.dirty.extend(self.docs.keys().cloned());
         self.sync_readers = true;
     }

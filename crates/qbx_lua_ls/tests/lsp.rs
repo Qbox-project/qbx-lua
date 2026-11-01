@@ -7334,6 +7334,52 @@ fn open_files_keep_their_hints_when_the_client_spells_uris_its_own_way() {
 }
 
 #[test]
+fn saving_an_open_document_leaves_the_other_resources_unchecked() {
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let fixture = Fixture(std::env::temp_dir().join(format!(
+        "qbx-save-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+    )));
+    for name in ["a", "b"] {
+        let folder = fixture.0.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("fxmanifest.lua"), "fx_version 'cerulean'\ngame 'gta5'\nclient_script 'main.lua'\n")
+            .unwrap();
+        std::fs::write(folder.join("main.lua"), format!("function {name}Global() end\n")).unwrap();
+    }
+    let mut client = Client::start(fixture.0.clone());
+    assert_eq!(client.diagnostics_for("b/main.lua"), [("lowercase-global".to_string(), 0)]);
+
+    // `b/main.lua` changes on disk without the server hearing of it, so only checking it again
+    // reports that it has nothing to show any more.
+    std::fs::write(fixture.0.join("b/main.lua"), "print(1)\n").unwrap();
+    let saved = client.uri("a/main.lua");
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": saved, "languageId": "lua", "version": 1, "text": "function aGlobal() end\n" } }),
+    );
+    client.diagnostics_for("a/main.lua");
+    // VS Code reports the file a save writes as changed on disk too.
+    client.diagnostics.clear();
+    client.notify("textDocument/didSave", json!({ "textDocument": { "uri": saved } }));
+    client.notify("workspace/didChangeWatchedFiles", json!({ "changes": [{ "uri": saved, "type": 2 }] }));
+    client.diagnostics_for("a/main.lua");
+    let other = client.uri("b/main.lua").to_string();
+    assert_eq!(client.diagnostics.get(&other), None, "a save checks its own resource, not the whole workspace");
+
+    // A change on disk has the resource of the changed file checked again.
+    client.notify("workspace/didChangeWatchedFiles", json!({ "changes": [{ "uri": other, "type": 2 }] }));
+    assert_eq!(client.diagnostics_for("b/main.lua"), []);
+    assert!(client.diagnostics.contains_key(&other), "the changed file is checked again");
+}
+
+#[test]
 fn closed_files_are_reported_when_the_client_sends_nothing_after_initialized() {
     // A client that registers no file watchers has no request of the server to answer.
     let mut client = Client::start_with_capabilities(fixture_root(), json!({}));
