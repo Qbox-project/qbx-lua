@@ -7377,6 +7377,19 @@ fn saving_an_open_document_leaves_the_other_resources_unchecked() {
     client.notify("workspace/didChangeWatchedFiles", json!({ "changes": [{ "uri": other, "type": 2 }] }));
     assert_eq!(client.diagnostics_for("b/main.lua"), []);
     assert!(client.diagnostics.contains_key(&other), "the changed file is checked again");
+
+    // Saving an open manifest may change what every resource imports, so the workspace is checked again.
+    std::fs::write(fixture.0.join("b/main.lua"), "function bAgain() end\n").unwrap();
+    let manifest = client.uri("a/fxmanifest.lua");
+    let text = std::fs::read_to_string(fixture.0.join("a/fxmanifest.lua")).unwrap();
+    client.notify(
+        "textDocument/didOpen",
+        json!({ "textDocument": { "uri": manifest, "languageId": "lua", "version": 1, "text": text } }),
+    );
+    client.diagnostics_for("a/fxmanifest.lua");
+    client.notify("textDocument/didSave", json!({ "textDocument": { "uri": manifest } }));
+    client.notify("workspace/didChangeWatchedFiles", json!({ "changes": [{ "uri": manifest, "type": 2 }] }));
+    assert_eq!(client.diagnostics_for("b/main.lua"), [("lowercase-global".to_string(), 0)]);
 }
 
 #[test]

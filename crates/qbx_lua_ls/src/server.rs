@@ -686,15 +686,15 @@ impl Server {
 
     fn watched_files_changed(&mut self, changes: Vec<FileEvent>) {
         // Saving an open document also writes it to disk, which the client reports here as well. The
-        // save already marked what it changes as stale, so the write changes nothing more.
+        // save already marked what it changes as stale, so the write changes nothing more, except for
+        // a manifest, which may change what every resource imports.
         let open: FxHashSet<PathBuf> = self.docs.values().map(|doc| normalize_path(&doc.path)).collect();
-        let changes: Vec<FileEvent> = changes
-            .into_iter()
-            .filter(|change| {
-                change.typ != FileChangeType::CHANGED
-                    || !uri_to_path(&change.uri).is_some_and(|path| open.contains(&normalize_path(&path)))
-            })
-            .collect();
+        let saved_open_script = |change: &FileEvent| {
+            change.typ == FileChangeType::CHANGED
+                && uri_to_path(&change.uri)
+                    .is_some_and(|path| !is_manifest_file(&path) && open.contains(&normalize_path(&path)))
+        };
+        let changes: Vec<FileEvent> = changes.into_iter().filter(|change| !saved_open_script(change)).collect();
         if changes.is_empty() {
             return;
         }
