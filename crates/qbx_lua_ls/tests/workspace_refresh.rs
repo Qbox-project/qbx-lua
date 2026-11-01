@@ -749,3 +749,18 @@ print(count, said)
     client.open(&query, text);
     assert_eq!(hover(&mut client, &query, text, "pears ="), "local pears: integer");
 }
+
+#[test]
+fn locals_assigned_from_their_own_fields_over_and_over_are_indexed_quickly() {
+    // Code that walks a nested table through one local, as `t = Config` `t = t.Jobs`, used to double
+    // the tables the local was taken to hold with every assignment.
+    let fixture = Fixture::new();
+    let steps: String = (0..40).map(|step| format!("    t = t.key{step}\n")).collect();
+    let text = format!("local t\nfunction Read()\n    t = Config\n{steps}    return t\nend\n");
+    fixture.write("demo/fxmanifest.lua", "client_script 'client.lua'\n");
+    fixture.write("demo/client.lua", &text);
+    let started = std::time::Instant::now();
+    let ws = fixture.workspace("demo");
+    assert!(ws.index.file_id(&fixture.0.join("demo/client.lua")).is_some());
+    assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+}

@@ -678,8 +678,9 @@ struct CastValue {
 }
 
 /// The locals that hold a table read from another local or a global, as `local child = self.child`
-/// does, each with the tables it was read from, as a root and the keys after it.
-type Aliases = FxHashMap<LocalId, Vec<(Root, Vec<SmolStr>)>>;
+/// does, each with the tables it was read from, as a root and the keys after it. Locals copied from
+/// each other in many places gather thousands of them, so they are kept in a set.
+type Aliases = FxHashMap<LocalId, FxHashSet<(Root, Vec<SmolStr>)>>;
 
 /// Walks the code of a file in the order it runs and records what its locals may hold. It keeps what
 /// they hold where it is, with a trail of what each change replaced: the ways through an `if` or a
@@ -1041,12 +1042,7 @@ impl<'a, 'r> Walker<'a, 'r> {
         if tables.is_empty() {
             return;
         }
-        let aliases = self.aliases.entry(local).or_default();
-        for table in tables {
-            if !aliases.contains(&table) {
-                aliases.push(table);
-            }
-        }
+        self.aliases.entry(local).or_default().extend(tables);
     }
 
     /// Whether `id` is the number of a field rather than of a local.
@@ -2481,12 +2477,20 @@ fn tables_of(resolution: &Resolution, aliases: &Aliases, expr: &Expr, out: &mut 
         _ => field_path(resolution, expr),
     };
     let Some((root, keys)) = table else { return };
+    // A table read through `MAX_KEYS` keys or more holds no field that guards narrow, as those are
+    // read through `MAX_KEYS` at most. Leaving those out also keeps the tables of locals assigned
+    // from their own fields over and over, as `node = node.children` `node = node.first` walks a
+    // nested table, from doubling with every assignment.
     if let Root::Local(local) = &root {
         for (alias, prefix) in aliases.get(local).into_iter().flatten() {
-            out.push((alias.clone(), prefix.iter().chain(&keys).cloned().collect()));
+            if prefix.len() + keys.len() < MAX_KEYS {
+                out.push((alias.clone(), prefix.iter().chain(&keys).cloned().collect()));
+            }
         }
     }
-    out.push((root, keys));
+    if keys.len() < MAX_KEYS {
+        out.push((root, keys));
+    }
 }
 
 /// What the code of a loop may change before it starts again: the locals, globals and the fields of
