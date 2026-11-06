@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use qbx_fivem_data::Side;
 use qbx_lua_syntax::ast::*;
 use qbx_lua_syntax::visit::{self, Visitor};
 use qbx_lua_syntax::{SmolStr, Span};
@@ -15,7 +16,7 @@ use crate::rules;
 use crate::scope::{LocalId, LocalKind, Resolved};
 use crate::side_guard::SideRegions;
 use crate::signature::{
-    defined, global_key, member_path, most_arguments, runtime_definition, undocumented, Requirement,
+    defined, global_alias, global_key, member_path, most_arguments, runtime_definition, undocumented, Requirement,
 };
 
 /// Every value assigned to a local or to a field of a local table, by local and dotted field path.
@@ -44,6 +45,8 @@ pub(super) struct Callees<'i, 'a> {
     own_env: ResourceEnv,
     locals: LocalDefs,
     declared: DeclaredDefs,
+    /// Locals that stand for a global table, whose fields any file of the resource may define.
+    aliases: FxHashMap<LocalId, SmolStr>,
     regions: SideRegions,
 }
 
@@ -54,11 +57,16 @@ impl<'i, 'a> Callees<'i, 'a> {
             own_env.add_summary(input.summary, None);
         }
         let env = input.resource.map_or(&own_env, |resource| resource.env);
-        let mut collector =
-            LocalCollector { input, env, defs: LocalDefs::default(), declared: DeclaredDefs::default() };
+        let mut collector = LocalCollector {
+            input,
+            env,
+            defs: LocalDefs::default(),
+            declared: DeclaredDefs::default(),
+            aliases: FxHashMap::default(),
+        };
         collector.visit_block(&input.chunk.block);
-        let (locals, declared) = (collector.defs, collector.declared);
-        Self { input, own_env, locals, declared, regions: SideRegions::of(input.source, input.chunk) }
+        let (locals, declared, aliases) = (collector.defs, collector.declared, collector.aliases);
+        Self { input, own_env, locals, declared, aliases, regions: SideRegions::of(input.source, input.chunk) }
     }
 
     fn env(&self) -> &ResourceEnv {
@@ -78,36 +86,38 @@ impl<'i, 'a> Callees<'i, 'a> {
                     return None;
                 }
                 let key = (id, SmolStr::new(fields.join(".")));
+                let alias = self.aliases.get(&id).filter(|_| !fields.is_empty() && !self.declared.contains_key(&key));
+                if let Some(path) = alias.and_then(|global| global_key(global, fields)) {
+                    let defs = self.global_defs(&path, side)?;
+                    if !defs.is_empty() {
+                        return overloads(defs, side);
+                    }
+                }
                 match (self.declared.get(&key), self.locals.get(&key)) {
                     (Some(declared), _) => vec![Some(declared.clone())],
                     (None, Some(defs)) => defs.clone(),
                     (None, None) => return None,
                 }
             }
-            // An encrypted script of the resource may define the global differently.
-            Resolved::Global(_) if self.env().opaque => return None,
-            Resolved::Global(_) => {
-                let path = global_key(&root.text, fields)?;
-                let mut defs: Vec<_> = self.env().function_defs(&path, side).map(|def| def.cloned()).collect();
-                // What the runtime and `---@extend` lines define counts beside the definitions, so a
-                // native or a function the resource does not define keeps the signatures it has.
-                if !defs.is_empty() {
-                    defs.extend(runtime_definition(&path, side));
-                    defs.extend(self.env().extension_defs(&path, side).map(|fun| Some(fun.clone())));
-                }
-                defs
-            }
+            Resolved::Global(_) => self.global_defs(&global_key(&root.text, fields)?, side)?,
         };
-        // A value other than a function literal may be any function.
-        let defs = defs.into_iter().collect::<Option<Vec<_>>>()?;
-        let signatures: Vec<Arc<FunType>> = defs
-            .iter()
-            .flat_map(|fun| {
-                let overloads = fun.overloads.iter().filter(|overload| applies_on(overload.side, side));
-                std::iter::once(fun).chain(overloads).cloned()
-            })
-            .collect();
-        (!signatures.is_empty()).then_some(signatures)
+        overloads(defs, side)
+    }
+
+    /// Every definition of the global or global table field at `path` that code on `side` can see.
+    /// `None` when an encrypted script of the resource may define it differently.
+    fn global_defs(&self, path: &str, side: Option<Side>) -> Option<Vec<Option<Arc<FunType>>>> {
+        if self.env().opaque {
+            return None;
+        }
+        let mut defs: Vec<_> = self.env().function_defs(path, side).map(|def| def.cloned()).collect();
+        // What the runtime and `---@extend` lines define counts beside the definitions, so a
+        // native or a function the resource does not define keeps the signatures it has.
+        if !defs.is_empty() {
+            defs.extend(runtime_definition(path, side));
+            defs.extend(self.env().extension_defs(path, side).map(|fun| Some(fun.clone())));
+        }
+        Some(defs)
     }
 
     /// The function types that the functions `call` may run declare for its argument at
@@ -136,11 +146,26 @@ impl<'i, 'a> Callees<'i, 'a> {
     }
 }
 
+/// The signatures of `defs` and their overloads for code on `side`, unless one may be any function.
+fn overloads(defs: Vec<Option<Arc<FunType>>>, side: Option<Side>) -> Option<Vec<Arc<FunType>>> {
+    // A value other than a function literal may be any function.
+    let defs = defs.into_iter().collect::<Option<Vec<_>>>()?;
+    let signatures: Vec<Arc<FunType>> = defs
+        .iter()
+        .flat_map(|fun| {
+            let overloads = fun.overloads.iter().filter(|overload| applies_on(overload.side, side));
+            std::iter::once(fun).chain(overloads).cloned()
+        })
+        .collect();
+    (!signatures.is_empty()).then_some(signatures)
+}
+
 struct LocalCollector<'i, 'a> {
     input: &'i FileInput<'a>,
     env: &'i ResourceEnv,
     defs: LocalDefs,
     declared: DeclaredDefs,
+    aliases: FxHashMap<LocalId, SmolStr>,
 }
 
 impl LocalCollector<'_, '_> {
@@ -193,6 +218,11 @@ impl<'ast> Visitor<'ast> for LocalCollector<'_, '_> {
                 }
             }
             StmtKind::Local { names, exprs, .. } => {
+                if let ([name], [value]) = (names.as_slice(), exprs.as_slice()) {
+                    if let Some((id, global)) = global_alias(self.input.resolution, &name.name, Some(value)) {
+                        self.aliases.insert(id, global);
+                    }
+                }
                 for (index, name) in names.iter().enumerate() {
                     let Some(id) = self.local(&name.name) else { continue };
                     self.declare(stmt, index, id, &[]);

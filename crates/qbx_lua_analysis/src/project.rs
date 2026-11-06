@@ -294,7 +294,7 @@ impl ResourceEnv {
         self.module_imports.extend(summary.module_imports.iter().cloned());
         for def in &summary.functions {
             let signature = def.signature.clone().filter(|_| signatures);
-            self.functions.entry(def.path.clone()).or_default().push((side, signature));
+            self.functions.entry(def.path.clone()).or_default().push((def.side.or(side), signature));
         }
         for (path, fun) in summary.extensions.iter().filter(|_| signatures) {
             self.extensions.entry(path.clone()).or_default().push((side, fun.clone()));

@@ -9,8 +9,9 @@ use crate::env::builtins;
 /// Parts of a file that only run on one side, whatever the manifest says about the file:
 /// the branches of `if IsDuplicityVersion() then ... else ... end`, of `lib.context == 'server'`,
 /// of `if os then`, which only the server opens, or of a local that holds the context as ox_lib's
-/// `IsDuplicityVersion() and 'server' or 'client'` does, the code after `if not
-/// IsDuplicityVersion() then return end`, the right side of `IsDuplicityVersion() and ...`, and the
+/// `IsDuplicityVersion() and 'server' or 'client'` does, or a field of a local table built with
+/// one, as `context.isServer` of `local context = { isServer = IsDuplicityVersion() }`, the code
+/// after `if not IsDuplicityVersion() then return end`, the right side of `IsDuplicityVersion() and ...`, and the
 /// `B` of `IsDuplicityVersion() and A or B`, which runs on the client.
 #[derive(Debug, Default)]
 pub struct SideRegions {
@@ -96,11 +97,14 @@ fn context_literal(expr: &Expr) -> Option<Side> {
 }
 
 /// Whether `expr` reads the name of the side the code runs on, `'server'` or `'client'`: from
-/// `lib.context`, or from a local that `Names` knows holds it.
+/// `lib.context`, or from a local or a field of one that `Names` knows holds it.
 fn is_context_read(expr: &Expr, names: &Names) -> bool {
     match &expr.unparen().kind {
         ExprKind::Name(name) => names.contexts.contains(&name.text),
-        _ => matches!(expr.unparen().dotted_path().as_deref(), Some("lib.context")),
+        _ => expr
+            .unparen()
+            .dotted_path()
+            .is_some_and(|path| path == "lib.context" || names.contexts.contains(path.as_str())),
     }
 }
 
@@ -128,6 +132,7 @@ fn side_when_true(cond: &Expr, names: &Names) -> Option<(Side, bool)> {
         ExprKind::Name(name) => {
             names.flags.get(&name.text).copied().or_else(|| library_side(&name.text)).map(|side| (side, true))
         }
+        ExprKind::Field { .. } => names.flags.get(cond.dotted_path()?.as_str()).map(|side| (*side, true)),
         ExprKind::Unary { op: UnOp::Not, expr } => {
             let (side, exact) = side_when_true(expr, names)?;
             exact.then_some((other(side), true))
@@ -189,6 +194,13 @@ impl<'ast> Visitor<'ast> for Flags {
         match &stmt.kind {
             StmtKind::Local { names, exprs, .. } if names.len() == 1 && exprs.len() == 1 => {
                 self.record(&names[0].name.text, &exprs[0]);
+                if let ExprKind::Table(fields) = &exprs[0].kind {
+                    for field in fields {
+                        if let TableField::Named { name, value } = field {
+                            self.record(&SmolStr::new(format!("{}.{}", names[0].name.text, name.text)), value);
+                        }
+                    }
+                }
             }
             StmtKind::Assign { targets, exprs } if targets.len() == 1 && exprs.len() == 1 => {
                 if let ExprKind::Name(name) = &targets[0].kind {

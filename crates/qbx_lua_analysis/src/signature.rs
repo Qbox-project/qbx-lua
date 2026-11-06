@@ -9,6 +9,7 @@ use qbx_luacats::luacats::{parse_doc_lines, DocGroup};
 use qbx_luacats::types::{parse_type, FunType, Param, Type};
 
 use crate::env::{builtins, leading_doc_lines};
+use crate::scope::{LocalId, Resolution, Resolved};
 
 const MAX_ALIAS_DEPTH: u8 = 8;
 
@@ -93,6 +94,16 @@ pub fn global_key(root: &str, fields: &[&str]) -> Option<SmolStr> {
         _ => std::iter::once(root).chain(fields.iter().copied()).collect(),
     };
     (!parts.is_empty()).then(|| SmolStr::new(parts.join(".")))
+}
+
+/// The global table a local stands for: `F` of `local F = PropertyFurniture` when nothing assigns
+/// `F` again, so fields set or read through `F` are those of the global.
+pub fn global_alias(resolution: &Resolution, name: &Name, value: Option<&Expr>) -> Option<(LocalId, SmolStr)> {
+    let Some(Resolved::Local(id)) = resolution.resolve_at(name.span.start) else { return None };
+    let ExprKind::Name(global) = &value?.kind else { return None };
+    let Some(Resolved::Global(_)) = resolution.resolve_at(global.span.start) else { return None };
+    let reassigned = resolution.local(id).refs.iter().any(|reference| reference.write);
+    (!reassigned).then(|| (id, global.text.clone()))
 }
 
 /// The `@alias` declarations of every `---` comment block in a file, with their types. Like LuaLS,

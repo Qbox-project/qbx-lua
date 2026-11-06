@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
+use qbx_fivem_data::Side;
 use qbx_lua_syntax::ast::*;
 use qbx_lua_syntax::visit::{self, Visitor};
 use qbx_lua_syntax::{Comment, SmolStr, Span};
 use qbx_luacats::types::{FunType, Type};
 
 use crate::env::is_meta_file;
-use crate::scope::{GlobalRefKind, Resolution, Resolved, MAIN_CHUNK};
-use crate::signature::{defined, doc_aliases, doc_extensions, global_key, member_path, undocumented};
+use rustc_hash::FxHashMap;
+
+use crate::scope::{GlobalRefKind, LocalId, Resolution, Resolved, MAIN_CHUNK};
+use crate::side_guard::SideRegions;
+use crate::signature::{defined, doc_aliases, doc_extensions, global_alias, global_key, member_path, undocumented};
 
 #[derive(Clone, Debug)]
 pub struct GlobalDef {
@@ -25,6 +29,9 @@ pub struct FunctionDef {
     /// `None` when the value is not a function. A function whose doc comment says nothing about its
     /// parameters has them without types.
     pub signature: Option<Arc<FunType>>,
+    /// The side a guard such as `if IsDuplicityVersion() then` restricts the definition to, whatever
+    /// side the file runs on.
+    pub side: Option<Side>,
 }
 
 /// What a file contributes to the shared global environment of its resource.
@@ -80,6 +87,8 @@ pub fn summarize(source: &str, chunk: &Chunk, resolution: &Resolution) -> FileSu
         env_defs: Vec::new(),
         module_imports: Vec::new(),
         functions: Vec::new(),
+        aliases: FxHashMap::default(),
+        regions: SideRegions::of(source, chunk),
         depth: 0,
     };
     collector.visit_block(&chunk.block);
@@ -104,12 +113,30 @@ struct FieldDefs<'a> {
     env_defs: Vec<GlobalDef>,
     module_imports: Vec<SmolStr>,
     functions: Vec<FunctionDef>,
+    /// Locals that stand for a global table, as `F` of `local F = PropertyFurniture`.
+    aliases: FxHashMap<LocalId, SmolStr>,
+    regions: SideRegions,
     depth: u32,
 }
 
 impl FieldDefs<'_> {
     fn is_global(&self, name: &Name) -> bool {
         matches!(self.resolution.resolve_at(name.span.start), Some(Resolved::Global(_)))
+    }
+
+    /// The dotted path of the global or global table field that `root.fields` assigns, through a
+    /// local that stands for a global table too.
+    fn global_path(&self, root: &Name, fields: &[&str]) -> Option<SmolStr> {
+        match self.resolution.resolve_at(root.span.start)? {
+            Resolved::Global(_) => global_key(&root.text, fields),
+            Resolved::Local(id) if !fields.is_empty() => global_key(self.aliases.get(&id)?, fields),
+            Resolved::Local(_) => None,
+        }
+    }
+
+    fn push_function(&mut self, path: SmolStr, signature: Option<Arc<FunType>>, at: u32) {
+        let side = self.regions.side_at(at);
+        self.functions.push(FunctionDef { path, signature, side });
     }
 }
 
@@ -136,23 +163,27 @@ impl<'ast> Visitor<'ast> for FieldDefs<'_> {
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match &stmt.kind {
-            StmtKind::Function { name, func } if self.is_global(&name.base) => {
-                if let Some(member) = name.path.first().or(name.method.as_ref()) {
+            StmtKind::Local { names, exprs, .. } if names.len() == 1 && exprs.len() == 1 => {
+                if let Some((id, global)) = global_alias(self.resolution, &names[0].name, exprs.first()) {
+                    self.aliases.insert(id, global);
+                }
+            }
+            StmtKind::Function { name, func } => {
+                if let Some(member) = name.path.first().or(name.method.as_ref()).filter(|_| self.is_global(&name.base))
+                {
                     self.out.push((name.base.text.clone(), member.text.clone()));
                 }
                 let fields: Vec<&str> = name.path.iter().chain(&name.method).map(|n| n.text.as_str()).collect();
-                if let Some(path) = global_key(&name.base.text, &fields) {
+                if let Some(path) = self.global_path(&name.base, &fields) {
                     let signature =
                         Some(defined(self.source, self.comments, stmt.span.start, func, name.method.is_some()));
-                    self.functions.push(FunctionDef { path, signature });
+                    self.push_function(path, signature, stmt.span.start);
                 }
             }
             StmtKind::Assign { targets, exprs } => {
                 for (index, target) in targets.iter().enumerate() {
-                    let Some((root, fields)) = member_path(target).filter(|(root, _)| self.is_global(root)) else {
-                        continue;
-                    };
-                    let Some(path) = global_key(&root.text, &fields) else { continue };
+                    let Some((root, fields)) = member_path(target) else { continue };
+                    let Some(path) = self.global_path(root, &fields) else { continue };
                     // A doc comment above `a, b = ...` does not say which value it describes.
                     let signature = match exprs.get(index).map(|e| &e.kind) {
                         Some(ExprKind::Function(func)) if targets.len() == 1 => {
@@ -161,7 +192,7 @@ impl<'ast> Visitor<'ast> for FieldDefs<'_> {
                         Some(ExprKind::Function(func)) => Some(undocumented(func, false)),
                         _ => None,
                     };
-                    self.functions.push(FunctionDef { path, signature });
+                    self.push_function(path, signature, stmt.span.start);
                 }
                 for target in targets {
                     if let ExprKind::Field { base, name, .. } = &target.kind {

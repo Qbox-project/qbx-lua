@@ -1181,6 +1181,102 @@ fn the_definition_that_takes_the_most_arguments_decides() {
 }
 
 #[test]
+fn every_file_of_the_resource_adds_definitions() {
+    let narrow = (
+        None,
+        "Util = {}
+function Util.f(a) end
+function Util.g() end",
+    );
+    let wide = (
+        None,
+        "function Util.f(a, b, c) end
+Util.g = function(...) end",
+    );
+    for call in ["Util.f(1, 2, 3)", "Util.g(1, 2, 3, 4)"] {
+        assert!(redundant_parameters(call, Some(Side::Server), &[narrow, wide]).is_empty(), "{call}");
+    }
+    assert_eq!(
+        redundant_parameters("Util.f(1, 2, 3, 4)", Some(Side::Server), &[narrow, wide]),
+        ["'Util.f' is called with 4 arguments, but takes at most 3"]
+    );
+}
+
+#[test]
+fn definitions_on_the_other_side_of_a_guard_do_not_count() {
+    let stub = (
+        Some(Side::Shared),
+        "HL = {}
+local context = { isServer = IsDuplicityVersion() }
+         if context.isServer then
+    LoadServerParts()
+else
+    function HL.logger() error('server only') end
+end",
+    );
+    assert!(redundant_parameters("HL.logger('event', {})", Some(Side::Server), &[stub]).is_empty());
+    assert_eq!(
+        redundant_parameters("HL.logger('event', {})", Some(Side::Client), &[stub]),
+        ["'HL.logger' is called with 2 arguments, but takes none"]
+    );
+    let direct = (
+        Some(Side::Shared),
+        "if IsDuplicityVersion() then
+    function Ping(a) end
+end",
+    );
+    assert!(redundant_parameters("Ping(1, 2)", Some(Side::Client), &[direct]).is_empty());
+    assert_eq!(redundant_parameters("Ping(1, 2)", Some(Side::Server), &[direct]).len(), 1);
+}
+
+#[test]
+fn fields_defined_through_a_local_count_for_the_global_table() {
+    let stub = (
+        Some(Side::Server),
+        "Store = {}
+local S = Store
+function S.view() end",
+    );
+    let real = (
+        Some(Side::Server),
+        "local S = Store
+function S.view(source, id) end",
+    );
+    let call = |source: &str, others: &[(Option<Side>, &str)]| redundant_parameters(source, Some(Side::Server), others);
+    assert!(call(
+        "local S = Store
+S.view(1, 2)",
+        &[stub, real]
+    )
+    .is_empty());
+    assert!(call("Store.view(1, 2)", &[stub, real]).is_empty());
+    assert_eq!(
+        call("Store.view(1, 2, 3)", &[stub, real]),
+        ["'Store.view' is called with 3 arguments, but takes at most 2"]
+    );
+    assert_eq!(
+        call(
+            "local S = Store
+S.view(1)",
+            &[stub]
+        ),
+        ["'S.view' is called with 1 argument, but takes none"]
+    );
+    assert_eq!(
+        call(
+            "local S = Store
+S = {}
+function S.view() end
+S.view(1, 2)",
+            &[stub, real]
+        )
+        .len(),
+        1,
+        "a local assigned again holds its own table"
+    );
+}
+
+#[test]
 fn runtime_functions_keep_their_signatures_beside_definitions() {
     let client = (Some(Side::Client), "function HasModelLoaded() return true end");
     let server = (Some(Side::Server), "os.time = function() return 0 end");
