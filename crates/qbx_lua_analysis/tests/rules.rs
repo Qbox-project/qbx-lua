@@ -168,6 +168,11 @@ fn event_checks_distinguish_own_handlers_from_other_resources() {
     );
     let wide = ("other", Some(Side::Client), "AddEventHandler('hud:update', function(value, extra, more) end)");
     assert_eq!(
+        resource_project(source, Side::Server, "hud", &[own_handler, wide]),
+        none,
+        "a handler anywhere that takes the payload"
+    );
+    assert_eq!(
         resource_project("TriggerClientEvent('hud:update', -1, 1)", Side::Server, "hud", &[wide]),
         ["fivem/event-missing-arguments"],
         "too few arguments for another resource's handler is still worth knowing"

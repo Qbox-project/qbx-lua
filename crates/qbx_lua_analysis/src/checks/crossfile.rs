@@ -128,13 +128,11 @@ impl CrossFile<'_, '_> {
         if arities.is_empty() || arities.iter().any(|a| a.vararg) {
             return;
         }
-        // Another resource's handler may ignore trailing payload on purpose, so only the
-        // resource's own handlers decide whether a trigger passes too much.
-        let most = if own.is_some() {
-            reachable.iter().filter(|r| owned_by(r)).filter_map(|r| r.handler).map(|a| a.params).max()
-        } else {
-            arities.iter().map(|a| a.params).max()
-        };
+        // Another resource's handler may ignore trailing payload on purpose, so a trigger passes
+        // too much only for an event its own resource handles, and only when no handler anywhere
+        // takes what it passes.
+        let handled_here = own.is_none() || reachable.iter().any(|r| owned_by(r) && r.handler.is_some());
+        let most = arities.iter().map(|a| a.params).max().filter(|_| handled_here);
         // A parameter that the doc comment of a handler marks optional may be left out.
         let least = arities.iter().map(|a| a.required).min().unwrap_or(0);
         if most.is_some_and(|most| passed > most) {
