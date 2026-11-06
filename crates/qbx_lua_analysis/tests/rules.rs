@@ -1250,6 +1250,20 @@ S.view(1, 2)",
     )
     .is_empty());
     assert!(call("Store.view(1, 2)", &[stub, real]).is_empty());
+    let pair = (
+        Some(Side::Server),
+        "local K, S = Other, Store
+function S.view(source, id) end",
+    );
+    assert!(
+        call(
+            "local S = Store
+S.view(1, 2)",
+            &[stub, pair]
+        )
+        .is_empty(),
+        "each name of a list"
+    );
     assert_eq!(
         call("Store.view(1, 2, 3)", &[stub, real]),
         ["'Store.view' is called with 3 arguments, but takes at most 2"]

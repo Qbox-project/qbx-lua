@@ -16,7 +16,7 @@ use crate::rules;
 use crate::scope::{LocalId, LocalKind, Resolved};
 use crate::side_guard::SideRegions;
 use crate::signature::{
-    defined, global_alias, global_key, member_path, most_arguments, runtime_definition, undocumented, Requirement,
+    defined, global_aliases, global_key, member_path, most_arguments, runtime_definition, undocumented, Requirement,
 };
 
 /// Every value assigned to a local or to a field of a local table, by local and dotted field path.
@@ -218,11 +218,7 @@ impl<'ast> Visitor<'ast> for LocalCollector<'_, '_> {
                 }
             }
             StmtKind::Local { names, exprs, .. } => {
-                if let ([name], [value]) = (names.as_slice(), exprs.as_slice()) {
-                    if let Some((id, global)) = global_alias(self.input.resolution, &name.name, Some(value)) {
-                        self.aliases.insert(id, global);
-                    }
-                }
+                self.aliases.extend(global_aliases(self.input.resolution, &stmt.kind));
                 for (index, name) in names.iter().enumerate() {
                     let Some(id) = self.local(&name.name) else { continue };
                     self.declare(stmt, index, id, &[]);

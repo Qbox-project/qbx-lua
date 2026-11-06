@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 
 use crate::scope::{GlobalRefKind, LocalId, Resolution, Resolved, MAIN_CHUNK};
 use crate::side_guard::SideRegions;
-use crate::signature::{defined, doc_aliases, doc_extensions, global_alias, global_key, member_path, undocumented};
+use crate::signature::{defined, doc_aliases, doc_extensions, global_aliases, global_key, member_path, undocumented};
 
 #[derive(Clone, Debug)]
 pub struct GlobalDef {
@@ -163,11 +163,7 @@ impl<'ast> Visitor<'ast> for FieldDefs<'_> {
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match &stmt.kind {
-            StmtKind::Local { names, exprs, .. } if names.len() == 1 && exprs.len() == 1 => {
-                if let Some((id, global)) = global_alias(self.resolution, &names[0].name, exprs.first()) {
-                    self.aliases.insert(id, global);
-                }
-            }
+            StmtKind::Local { .. } => self.aliases.extend(global_aliases(self.resolution, &stmt.kind)),
             StmtKind::Function { name, func } => {
                 if let Some(member) = name.path.first().or(name.method.as_ref()).filter(|_| self.is_global(&name.base))
                 {
