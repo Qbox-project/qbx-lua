@@ -64,6 +64,8 @@ fn bad_resource_reports_every_rule() {
                 | "unused-loop-variable"
                 | "unused-label"
                 | "redefined-local"
+                | "too-many-locals"
+                | "too-many-upvalues"
                 | "self-comparison"
                 | "builtin-overwrite"
                 | "qbox/prefer-cache"

@@ -76,6 +76,8 @@ pub const AMBIGUITY_1: &str = "ambiguity-1";
 pub const DUPLICATE_INDEX: &str = "duplicate-index";
 pub const DUPLICATE_SET_FIELD: &str = "duplicate-set-field";
 pub const DUPLICATE_ARGUMENT: &str = "duplicate-argument";
+pub const TOO_MANY_LOCALS: &str = "too-many-locals";
+pub const TOO_MANY_UPVALUES: &str = "too-many-upvalues";
 pub const MISSING_PARAMETER: &str = "missing-parameter";
 pub const REDUNDANT_PARAMETER: &str = "redundant-parameter";
 /// Reported by qbx-lua-ls, which indexes the LuaCATS types; the linter itself has no type information.
@@ -185,6 +187,8 @@ pub static RULES: &[Rule] = &[
     rule(DUPLICATE_INDEX, Suspicious, WARN, false, "A table constructor sets the same key twice."),
     rule(DUPLICATE_SET_FIELD, Suspicious, WARN, false, "A function is assigned to the same table field twice in one block of a file, so the second replaces the first."),
     rule(DUPLICATE_ARGUMENT, Correctness, ERROR, false, "Two parameters of one function share a name."),
+    rule(TOO_MANY_LOCALS, Correctness, ERROR, false, "A function has more than 200 local variables active at once, which the Lua 5.4 compiler refuses."),
+    rule(TOO_MANY_UPVALUES, Correctness, ERROR, false, "A function uses more than 255 upvalues, which the Lua 5.4 compiler refuses."),
     rule(MISSING_PARAMETER, Correctness, WARN, false, "A function is called without an argument for a parameter its LuaCATS annotations require."),
     rule(REDUNDANT_PARAMETER, Correctness, WARN, false, "A function is called with more arguments than it has parameters, so the extra values are lost."),
     rule(UNDEFINED_DOC_NAME, Correctness, WARN, false, "A LuaCATS annotation names a type that no @class, @alias or @enum declares for the file's side (language server only)."),

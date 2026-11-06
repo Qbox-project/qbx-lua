@@ -6,6 +6,7 @@ mod fivem;
 mod flow;
 mod globals;
 mod layout;
+mod limits;
 mod locale;
 mod locals;
 pub mod manifest;
@@ -114,6 +115,7 @@ pub fn check_file(input: &FileInput) -> Vec<Diagnostic> {
         return sink.finish();
     }
     locals::check(input, &mut sink);
+    limits::check(input, &mut sink);
     flow::check(input, &mut sink);
     layout::check(input, &mut sink);
     docs::check(input, &mut sink);

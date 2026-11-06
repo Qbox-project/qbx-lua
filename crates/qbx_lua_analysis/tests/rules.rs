@@ -2034,3 +2034,138 @@ fn whitespace_at_the_end_of_lines() {
         "local a = 1\nlocal b = 2\n\n-- comment  \nlocal s = [[x  \ny]]\nprint(a, b, s) --[[ c ]]\r\nprint(1)"
     );
 }
+
+fn declare_locals(count: usize, prefix: &str) -> String {
+    (0..count).map(|i| format!("local {prefix}{i} = {i}\n")).collect()
+}
+
+#[test]
+fn functions_with_more_local_variables_than_lua_compiles() {
+    let limit = |source: &str| reported_lines(source, "too-many-locals");
+    assert!(limit(&declare_locals(200, "x")).is_empty());
+    assert_eq!(limit(&declare_locals(201, "x")), [201]);
+    assert_eq!(
+        findings(&declare_locals(230, "x"), "too-many-locals")[0].1,
+        "the main chunk has 230 local variables active at once, more than the 200 that Lua allows"
+    );
+    let params = |count| format!("local function f(a, b)\n{}end\nreturn f\n", declare_locals(count, "x"));
+    assert!(limit(&params(198)).is_empty());
+    assert_eq!(limit(&params(199)), [200]);
+    assert!(findings(&params(199), "too-many-locals")[0].1.starts_with("function 'f' has 201 local variables"));
+    let method = |count| format!("local t = {{}}\nfunction t:m(a)\n{}end\nreturn t\n", declare_locals(count, "x"));
+    assert!(limit(&method(198)).is_empty());
+    assert_eq!(limit(&method(199)), [201]);
+    let constants: String = (0..201).map(|i| format!("local c{i} <const> = {i}\n")).collect();
+    assert_eq!(limit(&constants), [201]);
+    let values = |count| format!("{}local p, q = 1, 2\n", declare_locals(count, "x"));
+    assert!(limit(&values(198)).is_empty());
+    assert_eq!(limit(&values(199)), [200]);
+    let unpack = |count| format!("{}local a, b in tbl\n", declare_locals(count, "x"));
+    assert!(limit(&unpack(197)).is_empty());
+    assert_eq!(limit(&unpack(198)), [199]);
+}
+
+#[test]
+fn loops_take_hidden_local_variables() {
+    let limit = |source: &str| reported_lines(source, "too-many-locals");
+    let numeric = |count| format!("{}for i = 1, 2 do end\n", declare_locals(count, "x"));
+    assert!(limit(&numeric(196)).is_empty());
+    assert_eq!(limit(&numeric(197)), [198]);
+    let generic = |count| format!("{}for k, v in next, {{}} do end\n", declare_locals(count, "x"));
+    assert!(limit(&generic(194)).is_empty());
+    assert_eq!(limit(&generic(195)), [196]);
+    let single = |count| format!("{}for k in next, {{}} do end\n", declare_locals(count, "x"));
+    assert!(limit(&single(195)).is_empty());
+    assert_eq!(limit(&single(196)), [197]);
+    let nested = |count| format!("{}for i = 1, 2 do for j = 1, 2 do end end\n", declare_locals(count, "x"));
+    assert!(limit(&nested(192)).is_empty());
+    assert_eq!(limit(&nested(193)), [194]);
+}
+
+#[test]
+fn closed_blocks_and_nested_functions_free_their_local_variables() {
+    let limit = |source: &str| reported_lines(source, "too-many-locals");
+    let closed = format!("do\n{}end\n{}", declare_locals(150, "a"), declare_locals(150, "b"));
+    assert!(limit(&closed).is_empty());
+    let loops = format!(
+        "{}for i = 1, 2 do local z = 1 end\nfor k, v in next, {{}} do end\n{}",
+        declare_locals(190, "x"),
+        declare_locals(6, "y")
+    );
+    assert!(limit(&loops).is_empty());
+    let nested = format!("{}local function g()\n{}end\n", declare_locals(150, "a"), declare_locals(150, "b"));
+    assert!(limit(&nested).is_empty());
+    let inner = format!("local function g()\n{}end\n", declare_locals(201, "b"));
+    assert_eq!(limit(&inner), [202]);
+    let repeat = |count| format!("{}repeat local r = 1 until r\n", declare_locals(count, "x"));
+    assert!(limit(&repeat(199)).is_empty());
+    assert_eq!(limit(&repeat(200)), [201]);
+}
+
+/// A function three levels down that reads `outer` locals of the first and `middle` of the second.
+fn upvalue_source(head: &str, outer: usize, middle: usize, extra: &str) -> String {
+    let reads = |count, prefix| (0..count).map(|i| format!("      s = {prefix}{i}\n")).collect::<String>();
+    format!(
+        "local function l1()\n{head}{}  local function l2()\n{}    return function()\n      local s = 0\n{}{}{extra}    end\n  end\n  return l2\nend\nreturn l1\n",
+        declare_locals(outer, "o"),
+        declare_locals(middle, "m"),
+        reads(outer, "o"),
+        reads(middle, "m"),
+    )
+}
+
+#[test]
+fn functions_with_more_upvalues_than_lua_compiles() {
+    let limit = |source: &str| reported_lines(source, "too-many-upvalues");
+    assert!(limit(&upvalue_source("", 150, 105, "")).is_empty());
+    let over = upvalue_source("", 150, 106, "");
+    assert_eq!(limit(&over), [516]);
+    assert_eq!(
+        findings(&over, "too-many-upvalues")[0].1,
+        "function at line 259 has 256 upvalues, more than the 255 that Lua allows"
+    );
+    assert_eq!(limit(&upvalue_source("", 150, 105, "      s = G\n")), [515]);
+    let local_env = format!("local _ENV = {{}}\n{}", upvalue_source("", 150, 104, "      s = G\n"));
+    assert!(limit(&local_env).is_empty());
+}
+
+#[test]
+fn compile_time_constants_are_no_upvalues() {
+    let upvalues = |constant: &str| {
+        let head = format!("  local k <const> = {constant}\n");
+        reported_lines(&upvalue_source(&head, 150, 105, "      s = k\n"), "too-many-upvalues").len()
+    };
+    for folded in [
+        "1 + 2",
+        "\"text\"",
+        "not nil",
+        "nil or 3",
+        "\"s\" and 4",
+        "3.0 | 0",
+        "1 - 1",
+        "-7 // 2",
+        "2 ^ 0.5",
+        "`prop` + 1",
+        "(5)",
+    ] {
+        assert_eq!(upvalues(folded), 0, "{folded} is a constant");
+    }
+    for register in [
+        "1 / 0",
+        "1 // 0",
+        "-0.0",
+        "1.0 - 1.0",
+        "1.5 | 0",
+        "1 or 2",
+        "false and 1",
+        "1 == 1",
+        "#\"ab\"",
+        "\"a\" .. \"b\"",
+        "-\"1\"",
+        "f()",
+    ] {
+        assert_eq!(upvalues(register), 1, "{register} is held in a register");
+    }
+    let not_last = upvalue_source("  local k <const>, j = 1, 2\n", 150, 105, "      s = k\n");
+    assert_eq!(reported_lines(&not_last, "too-many-upvalues").len(), 1);
+}
