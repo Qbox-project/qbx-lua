@@ -16,4 +16,4 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: Qbox-project/qbx-lua@v1.2.0
+      - uses: Qbox-project/qbx-lua@v1.2.1
