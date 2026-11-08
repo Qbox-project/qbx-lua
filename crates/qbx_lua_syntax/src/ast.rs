@@ -195,12 +195,29 @@ impl Expr {
 
     /// Dotted path for plain `a.b.c` chains (string indexes included), e.g. `Citizen.Wait`.
     pub fn dotted_path(&self) -> Option<String> {
-        match &self.kind {
-            ExprKind::Name(name) => Some(name.text.to_string()),
-            ExprKind::Field { base, name, .. } => Some(format!("{}.{}", base.dotted_path()?, name.text)),
-            ExprKind::Index { base, index, .. } => Some(format!("{}.{}", base.dotted_path()?, index.as_string()?)),
-            _ => None,
+        let mut path = String::new();
+        self.write_dotted_path(&mut path).then_some(path)
+    }
+
+    fn write_dotted_path(&self, out: &mut String) -> bool {
+        let (base, key) = match &self.kind {
+            ExprKind::Name(name) => {
+                out.push_str(&name.text);
+                return true;
+            }
+            ExprKind::Field { base, name, .. } => (base, &name.text),
+            ExprKind::Index { base, index, .. } => match index.as_string() {
+                Some(key) => (base, key),
+                None => return false,
+            },
+            _ => return false,
+        };
+        if !base.write_dotted_path(out) {
+            return false;
         }
+        out.push('.');
+        out.push_str(key);
+        true
     }
 }
 
