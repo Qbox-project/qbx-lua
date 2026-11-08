@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, OnceCell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -556,10 +556,77 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 
 /// How many folders up from the folder of the file `from` the nearest folder that also holds the
 /// file `to` is.
+struct Viewer<'a> {
+    index: &'a Index,
+    from: FileId,
+    source: Option<&'a FileEntry>,
+    /// The files that the imports of the resources running `from` load on its side, collected once
+    /// a second file is looked up in them.
+    imported: OnceCell<FxHashSet<FileId>>,
+    scanned: Cell<bool>,
+}
+
+impl Viewer<'_> {
+    fn sees(&self, target: FileId) -> bool {
+        if self.from == target {
+            return true;
+        }
+        let (Some(source), Some(other)) = (self.source, self.index.file(target)) else { return false };
+        let sides_match = match (source.side, other.side.or(other.index.definition_scope.side)) {
+            (Some(a), Some(b)) => b.is_available_on(a),
+            _ => true,
+        };
+        if !sides_match {
+            return false;
+        }
+        if other.defines_for_all() {
+            let provider = other.index.definition_scope.provider.as_deref();
+            return provider.is_none_or(|provider| self.index.imports_from(self.from, source, provider));
+        }
+        if other.origin == FileOrigin::Stub {
+            return true;
+        }
+        match (source.resource, other.resource) {
+            (Some(a), Some(b)) if a == b => true,
+            // A file that other resources run sees what their scripts and imports declare.
+            (Some(_), _) => {
+                let loaders = self.index.loaders_of(self.from);
+                loaders.iter().any(|loader| other.resource == Some(*loader)) || self.imports(target)
+            }
+            (None, None) => true,
+            (None, Some(_)) => false,
+        }
+    }
+
+    fn imports(&self, target: FileId) -> bool {
+        if let Some(imported) = self.imported.get() {
+            return imported.contains(&target);
+        }
+        if !self.scanned.replace(true) {
+            return self.imported_files().any(|file| file == target);
+        }
+        self.imported.get_or_init(|| self.imported_files().collect()).contains(&target)
+    }
+
+    fn imported_files(&self) -> impl Iterator<Item = FileId> + '_ {
+        let source = self.source.expect("only files of a resource import");
+        let resources = source.resource.into_iter().chain(self.index.loaders_of(self.from).iter().copied());
+        let imports = resources.filter_map(|id| self.index.resource(id)).flat_map(|r| &r.imports);
+        let on_side = move |side: &Side| source.side.is_none_or(|s| side.is_available_on(s));
+        imports.filter(move |(_, side)| on_side(side)).map(|(file, _)| *file)
+    }
+}
+
 fn folders_up(from: &Path, to: &Path) -> usize {
     let (Some(from), Some(to)) = (from.parent(), to.parent()) else { return 0 };
-    let shared = from.components().zip(to.components()).take_while(|(a, b)| a == b).count();
-    from.components().count() - shared
+    let shared = folders(from).zip(folders(to)).take_while(|(a, b)| a == b).count();
+    folders(from).count() - shared
+}
+
+/// The names of the folders in `path`, split on its separators without the cost of `components`.
+fn folders(path: &Path) -> impl Iterator<Item = &[u8]> {
+    let bytes = path.as_os_str().as_encoded_bytes();
+    bytes.split(|b| std::path::is_separator(char::from(*b))).filter(|name| !name.is_empty() && *name != b".")
 }
 
 /// Adds `slot` to the slots of `key` in file order, where a scan puts them, so that what lookups find
@@ -919,41 +986,12 @@ impl Index {
 
     /// Whether symbols of `target` are in scope for code in `from`.
     pub fn is_visible(&self, from: FileId, target: FileId) -> bool {
-        if from == target {
-            return true;
-        }
-        let (Some(source), Some(other)) = (self.file(from), self.file(target)) else { return false };
-        let sides_match = match (source.side, other.side.or(other.index.definition_scope.side)) {
-            (Some(a), Some(b)) => b.is_available_on(a),
-            _ => true,
-        };
-        if !sides_match {
-            return false;
-        }
-        if other.defines_for_all() {
-            let provider = other.index.definition_scope.provider.as_deref();
-            return provider.is_none_or(|provider| self.imports_from(from, source, provider));
-        }
-        if other.origin == FileOrigin::Stub {
-            return true;
-        }
-        let imports = |resource: ResourceId| {
-            self.resource(resource).is_some_and(|r| {
-                r.imports
-                    .iter()
-                    .any(|(file, side)| *file == target && source.side.is_none_or(|s| side.is_available_on(s)))
-            })
-        };
-        match (source.resource, other.resource) {
-            (Some(a), Some(b)) if a == b => true,
-            // A file that other resources run sees what their scripts and imports declare.
-            (Some(a), _) => {
-                imports(a)
-                    || self.loaders_of(from).iter().any(|loader| other.resource == Some(*loader) || imports(*loader))
-            }
-            (None, None) => true,
-            (None, Some(_)) => false,
-        }
+        self.viewer(from).sees(target)
+    }
+
+    /// What code in `from` sees, for asking that of many files in a row.
+    fn viewer(&self, from: FileId) -> Viewer<'_> {
+        Viewer { index: self, from, source: self.file(from), imported: OnceCell::new(), scanned: Cell::new(false) }
     }
 
     /// The other resources that run the file `file` through one of their imports.
@@ -999,8 +1037,9 @@ impl Index {
     ) -> Vec<(FileId, &'a T)> {
         // Strictly what the runtime would see: a `Config` of some other resource is a different table.
         let Some(slots) = slots else { return Vec::new() };
+        let viewer = self.viewer(from);
         let resolve = |(file, i): &Slot| Some((*file, get(self.file(*file)?, *i)?));
-        slots.iter().filter(|(f, _)| self.is_visible(from, *f)).filter_map(resolve).collect()
+        slots.iter().filter(|(f, _)| viewer.sees(*f)).filter_map(resolve).collect()
     }
 
     /// Whether `target` is a definition file outside any resource that code in `from` only falls back
@@ -1039,7 +1078,7 @@ impl Index {
         let mut found = self.visible_first(self.globals.get(name), from, |f, i| f.index.globals.get(i as usize));
         self.prefer_own(from, &mut found, |(file, _)| *file);
         if found.len() > 1 {
-            found.sort_by_key(|(file, _)| self.distance(from, *file));
+            found.sort_by_cached_key(|(file, _)| self.distance(from, *file));
         }
         found
     }
@@ -1177,7 +1216,8 @@ impl Index {
             target == from || (own_resource.is_some() && self.file(target).and_then(|f| f.resource) == own_resource)
         };
         let is_stub = |target: FileId| self.file(target).is_some_and(|f| f.origin == FileOrigin::Stub);
-        let mut in_scope: Vec<Slot> = slots.iter().copied().filter(|(f, _)| self.is_visible(from, *f)).collect();
+        let viewer = self.viewer(from);
+        let mut in_scope: Vec<Slot> = slots.iter().copied().filter(|(f, _)| viewer.sees(*f)).collect();
         self.prefer_own(from, &mut in_scope, |(file, _)| *file);
         if in_scope.iter().any(|(f, _)| is_own(*f)) && !slots.iter().any(|(f, _)| is_stub(*f)) {
             return in_scope;
