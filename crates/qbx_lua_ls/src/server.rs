@@ -99,6 +99,8 @@ pub struct Server {
     stale_resources: FxHashSet<Option<crate::index::ResourceId>>,
     /// Closed files to re-lint besides those of `stale_resources`.
     stale_files: FxHashSet<crate::index::FileId>,
+    /// A lint of the closed files that stopped to answer a message, carried on once none is waiting.
+    workspace_pass: Option<WorkspacePass>,
     /// What open documents declare differently than when the files that read it were indexed.
     /// Those files follow once a document is saved or closed, or a file changes on disk, rather than
     /// on every edit.
@@ -107,6 +109,21 @@ pub struct Server {
     /// last indexed.
     sync_readers: bool,
     next_request_id: i32,
+}
+
+struct WorkspacePass {
+    everything: bool,
+    scope: FxHashSet<Option<crate::index::ResourceId>>,
+    /// The files left to check, the next one last.
+    targets: Vec<check::Target>,
+    checked: FxHashSet<Url>,
+    locale_usage: FxHashMap<crate::index::ResourceId, Vec<qbx_lua_analysis::locale::LocaleUsage>>,
+}
+
+impl WorkspacePass {
+    fn in_scope(&self, resource: Option<crate::index::ResourceId>) -> bool {
+        self.everything || self.scope.contains(&resource)
+    }
 }
 
 pub fn capabilities() -> ServerCapabilities {
@@ -185,9 +202,24 @@ pub fn run_connection(connection: Connection) -> AnyResult<()> {
     });
     connection.initialize_finish(id, result)?;
 
-    let mut server = Server::new(connection, params);
+    let mut server = Server::new(buffered(connection), params);
     server.start();
     server.main_loop()
+}
+
+/// `lsp_server` hands over each message through a channel without capacity, which always looks
+/// empty, so the server could never tell that a message is waiting while it lints the workspace.
+fn buffered(connection: Connection) -> Connection {
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    let incoming = connection.receiver;
+    std::thread::spawn(move || {
+        for message in incoming {
+            if sender.send(message).is_err() {
+                break;
+            }
+        }
+    });
+    Connection { sender: connection.sender, receiver }
 }
 
 #[allow(deprecated)]
@@ -248,6 +280,7 @@ impl Server {
             workspace_stale: true,
             stale_resources: FxHashSet::default(),
             stale_files: FxHashSet::default(),
+            workspace_pass: None,
             pending: Changes::default(),
             sync_readers: false,
             next_request_id: 0,
@@ -472,90 +505,107 @@ impl Server {
     }
 
     /// Lints the files nobody has open, so the Problems panel covers the whole workspace. Each file
-    /// is parsed, checked and dropped again; only the diagnostics leave this function.
+    /// is parsed, checked and dropped again; only the diagnostics leave this function. A message that
+    /// arrives meanwhile is answered first: the pass stops after the file it is on and goes on later.
     fn publish_workspace(&mut self) {
+        if self.workspace_stale {
+            self.workspace_pass = None;
+        }
+        let Some(mut pass) = self.workspace_pass.take().or_else(|| self.start_workspace_pass()) else { return };
+        let rule_settings = self.settings.rule_settings();
+        let crossrefs = self.ws.crossrefs();
+        // A client spells the URI of a file in its own way, as VS Code does with `file:///c%3A/...`,
+        // so the documents it has open are found by path. Reporting an open file here as well would
+        // replace what it shows with this list, which has no hints.
+        let open: FxHashMap<PathBuf, Url> =
+            self.docs.iter().map(|(uri, doc)| (normalize_path(&doc.path), uri.clone())).collect();
+        while let Some(target) = pass.targets.pop() {
+            pass.checked.insert(target.uri.clone());
+            if let Some(doc) = open.get(&normalize_path(&target.path)).and_then(|uri| self.docs.get(uri)) {
+                if let Some(resource) = target.resource {
+                    let usage = qbx_lua_analysis::locale::locale_usage(&doc.chunk);
+                    pass.locale_usage.entry(resource).or_default().push(usage);
+                }
+                self.workspace_reported.remove(&target.uri);
+            } else if let Ok(text) = qbx_lua_analysis::project::read_source(&target.path) {
+                let (mut found, usage) =
+                    check::file_diagnostics(&mut self.ws, &target, text, &rule_settings, &crossrefs);
+                if let Some(resource) = target.resource {
+                    pass.locale_usage.entry(resource).or_default().push(usage);
+                }
+                found.retain(|d| d.severity != Some(DiagnosticSeverity::HINT));
+                found.sort_by_key(|d| d.severity.map_or(4, |s| if s == DiagnosticSeverity::ERROR { 0 } else { 1 }));
+                found.truncate(MAX_PROBLEMS_PER_CLOSED_FILE);
+                self.report_closed(target.uri, found);
+            }
+            if !self.connection.receiver.is_empty() {
+                self.workspace_pass = Some(pass);
+                return;
+            }
+        }
+        // The keys a resource uses are only all known when each of its files was checked.
+        let usages = std::mem::take(&mut pass.locale_usage);
+        let usages: Vec<_> = usages.into_iter().filter(|(resource, _)| pass.in_scope(Some(*resource))).collect();
+        for (resource, usages) in usages {
+            let Some((uri, found)) = check::unused_locale_keys(&self.ws, resource, usages, &rule_settings) else {
+                continue;
+            };
+            pass.checked.insert(uri.clone());
+            self.report_closed(uri, found);
+        }
+        if pass.everything {
+            let gone: Vec<Url> =
+                self.workspace_reported.iter().filter(|uri| !pass.checked.contains(*uri)).cloned().collect();
+            for uri in gone {
+                self.workspace_reported.remove(&uri);
+                let is_open = uri_to_path(&uri).is_some_and(|path| open.contains_key(&normalize_path(&path)));
+                if !is_open {
+                    self.notify::<notif::PublishDiagnostics>(PublishDiagnosticsParams {
+                        uri,
+                        diagnostics: Vec::new(),
+                        version: None,
+                    });
+                }
+            }
+        }
+    }
+
+    fn start_workspace_pass(&mut self) -> Option<WorkspacePass> {
         let everything = std::mem::take(&mut self.workspace_stale);
         let scope = std::mem::take(&mut self.stale_resources);
         let stale_files = std::mem::take(&mut self.stale_files);
         if !everything && scope.is_empty() && stale_files.is_empty() {
-            return;
+            return None;
         }
-        let in_scope = |resource: Option<crate::index::ResourceId>| everything || scope.contains(&resource);
+        let mut pass = WorkspacePass {
+            everything,
+            scope,
+            targets: Vec::new(),
+            checked: FxHashSet::default(),
+            locale_usage: FxHashMap::default(),
+        };
         let settings = &self.settings.diagnostics;
-        let enabled = settings.enable.unwrap_or(true) && settings.workspace.unwrap_or(true);
-        let targets = match enabled {
-            true => check::targets(
+        if settings.enable.unwrap_or(true) && settings.workspace.unwrap_or(true) {
+            pass.targets = check::targets(
                 &self.ws,
-                |id, file| in_scope(file.resource) || stale_files.contains(&id),
-                |id| in_scope(Some(id)),
-            ),
-            false => Vec::new(),
-        };
+                |id, file| pass.in_scope(file.resource) || stale_files.contains(&id),
+                |id| pass.in_scope(Some(id)),
+            );
+            pass.targets.reverse();
+        }
+        Some(pass)
+    }
 
-        let rule_settings = self.settings.rule_settings();
-        // A client spells the URI of a file in its own way, as VS Code does with `file:///c%3A/...`,
-        // so the documents it has open are found by path. Reporting an open file here as well would
-        // replace what it shows with this list, which has no hints.
-        let open: FxHashMap<PathBuf, &Document> =
-            self.docs.values().map(|doc| (normalize_path(&doc.path), doc)).collect();
-        let checked: FxHashSet<Url> = targets.iter().map(|target| target.uri.clone()).collect();
-        let mut reported: FxHashSet<Url> = if everything {
-            FxHashSet::default()
+    /// Shows what a closed file reports, or clears what it showed before.
+    fn report_closed(&mut self, uri: Url, found: Vec<Diagnostic>) {
+        if found.is_empty() {
+            if !self.workspace_reported.remove(&uri) {
+                return;
+            }
         } else {
-            self.workspace_reported.iter().filter(|uri| !checked.contains(*uri)).cloned().collect()
-        };
-        let crossrefs = self.ws.crossrefs();
-        let mut locale_usage: FxHashMap<crate::index::ResourceId, Vec<qbx_lua_analysis::locale::LocaleUsage>> =
-            FxHashMap::default();
-        for target in &targets {
-            if let Some(open) = open.get(&normalize_path(&target.path)) {
-                if let Some(resource) = target.resource {
-                    locale_usage.entry(resource).or_default().push(qbx_lua_analysis::locale::locale_usage(&open.chunk));
-                }
-                continue;
-            }
-            let Ok(text) = qbx_lua_analysis::project::read_source(&target.path) else { continue };
-            let (mut found, usage) = check::file_diagnostics(&mut self.ws, target, text, &rule_settings, &crossrefs);
-            if let Some(resource) = target.resource {
-                locale_usage.entry(resource).or_default().push(usage);
-            }
-            found.retain(|d| d.severity != Some(DiagnosticSeverity::HINT));
-            found.sort_by_key(|d| d.severity.map_or(4, |s| if s == DiagnosticSeverity::ERROR { 0 } else { 1 }));
-            found.truncate(MAX_PROBLEMS_PER_CLOSED_FILE);
-            if !found.is_empty() {
-                reported.insert(target.uri.clone());
-            }
-            if !found.is_empty() || self.workspace_reported.contains(&target.uri) {
-                self.notify::<notif::PublishDiagnostics>(PublishDiagnosticsParams {
-                    uri: target.uri.clone(),
-                    diagnostics: found,
-                    version: None,
-                });
-            }
+            self.workspace_reported.insert(uri.clone());
         }
-        // The keys a resource uses are only all known when each of its files was checked.
-        for (resource, usages) in locale_usage.into_iter().filter(|(resource, _)| in_scope(Some(*resource))) {
-            let Some((uri, found)) = check::unused_locale_keys(&self.ws, resource, usages, &rule_settings) else {
-                continue;
-            };
-            reported.remove(&uri);
-            if !found.is_empty() {
-                reported.insert(uri.clone());
-            }
-            if !found.is_empty() || self.workspace_reported.contains(&uri) {
-                self.notify::<notif::PublishDiagnostics>(PublishDiagnosticsParams {
-                    uri,
-                    diagnostics: found,
-                    version: None,
-                });
-            }
-        }
-        let is_open = |uri: &Url| uri_to_path(uri).is_some_and(|path| open.contains_key(&normalize_path(&path)));
-        for uri in self.workspace_reported.difference(&reported).filter(|uri| !is_open(uri)) {
-            let cleared = PublishDiagnosticsParams { uri: uri.clone(), diagnostics: Vec::new(), version: None };
-            self.notify::<notif::PublishDiagnostics>(cleared);
-        }
-        self.workspace_reported = reported;
+        self.notify::<notif::PublishDiagnostics>(PublishDiagnosticsParams { uri, diagnostics: found, version: None });
     }
 
     fn mark_resource_stale(&mut self, uri: &Url) {
@@ -1026,6 +1076,7 @@ impl Server {
                 self.flush_index();
                 self.stale_resources.clear();
                 self.stale_files.clear();
+                self.workspace_pass = None;
                 self.workspace_stale = true;
                 Ok(json!({ "files": stats.files, "resources": stats.resources, "millis": stats.millis as u64 }))
             }
