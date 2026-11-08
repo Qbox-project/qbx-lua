@@ -48,6 +48,8 @@ pub struct Workspace {
     /// Convars assigned with `set`, `setr` or `sets` in the workspace's .cfg files.
     pub cfg_convars: Vec<SmolStr>,
     locator: ResourceLocator,
+    /// The resource folder of each folder looked up, until a manifest appears, changes or vanishes.
+    resource_roots: FxHashMap<PathBuf, Option<PathBuf>>,
 }
 
 fn cfg_convars(roots: &[PathBuf]) -> Vec<SmolStr> {
@@ -116,6 +118,7 @@ impl Workspace {
         let mut stats = ScanStats::default();
         self.index.clear_workspace();
         self.locator = ResourceLocator::default();
+        self.resource_roots.clear();
         self.lint_config =
             self.roots.first().and_then(|root| Config::discover(root).ok().flatten()).unwrap_or_default();
         let roots: Vec<(PathBuf, FileOrigin)> = self
@@ -206,6 +209,7 @@ impl Workspace {
     }
 
     pub fn reload_manifest(&mut self, manifest_file: &Path) {
+        self.resource_roots.clear();
         let Some(root) = manifest_file.parent() else { return };
         let Some(id) = self.index.resources.iter().position(|r| r.root == root) else {
             self.ensure_resource(root);
@@ -224,11 +228,21 @@ impl Workspace {
 
     /// The resource of `path` and the side its manifest, or else a `side` override, runs it on.
     pub fn side_and_resource(&mut self, path: &Path) -> (Option<ResourceId>, Option<Side>) {
-        let Some(root) = find_manifest_dir(path) else { return (None, None) };
+        let Some(root) = self.resource_root(path) else { return (None, None) };
         let Some(id) = self.ensure_resource(&root) else { return (None, None) };
         let relative = relative_slash_path(&root, path);
         let side = side_of(&self.index.resources[id as usize].manifest, &relative);
         (Some(id), side.or_else(|| self.lint_config.side_for(path)))
+    }
+
+    fn resource_root(&mut self, file: &Path) -> Option<PathBuf> {
+        let folder = file.parent()?;
+        if let Some(root) = self.resource_roots.get(folder) {
+            return root.clone();
+        }
+        let root = find_manifest_dir(file);
+        self.resource_roots.insert(folder.to_path_buf(), root.clone());
+        root
     }
 
     /// Re-indexes the files whose side a changed configuration moves, since the side decides the
