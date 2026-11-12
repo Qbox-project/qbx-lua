@@ -80,7 +80,9 @@ impl Printer<'_> {
     /// Appends a comment that sits on the same source line right after `end`.
     fn trailing_comment(&mut self, end: u32, line: &mut String) -> u32 {
         let Some(comment) = self.comments.get(self.next) else { return end };
-        let same_line = comment.span.start >= end && self.newlines_between(end, comment.span.start) == 0;
+        // Stops at the first newline: the next comment may lie megabytes ahead of every statement before it.
+        let gap = self.src.get(end as usize..comment.span.start as usize);
+        let same_line = comment.span.start >= end && gap.is_none_or(|gap| !gap.contains('\n'));
         if !same_line || (comment.kind != CommentKind::Line && is_multiline(self.text(comment.span))) {
             return end;
         }
