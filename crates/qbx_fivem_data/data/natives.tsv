@@ -166,7 +166,7 @@ ApplyPedDamagePack	c	PED	0x46DF918788CB093F		ped:Ped,damagePack:string,damage:nu
 ApplyPedOverlay	b	PED	0x5F5D1665E352A839		ped:Ped,collection:Hash,overlay:Hash	AddPedDecorationFromHashes
 ApplyWeatherCycles	c	CFX	0x3422291C	boolean	numEntries:integer,msPerCycle:integer	
 AreAllNavmeshRegionsLoaded	c	PATHFIND	0x8415D95B194A3AEA	boolean		
-AreAllVehicleWindowsIntact	c	VEHICLE	0x11D862A3E977A9EF	boolean	vehicle:Vehicle	
+AreAllVehicleWindowsIntact	b	VEHICLE	0x11D862A3E977A9EF	boolean	vehicle:Vehicle	
 AreAnyVehicleSeatsFree	c	VEHICLE	0x2D34FC3BC4ADB780	boolean	vehicle:Vehicle	
 AreBombBayDoorsOpen	c	VEHICLE	0xD0917A423314BBA8	boolean	aircraft:Vehicle	
 AreCoordsCollidingWithExterior	c	INTERIOR	0xEEA5AC2EDA7C33E8	boolean	x:number,y:number,z:number	IsCollisionMarkedOutside
@@ -469,6 +469,7 @@ ClearVehicleGeneratorAreaOfInterest	c	VEHICLE	0x0A436B8643716D14
 ClearVehiclePhoneExplosiveDevice	c	VEHICLE	0xAA3F739ABDDCF21F			
 ClearVehicleRouteHistory	c	VEHICLE	0x6D6AF961B72728AE		vehicle:Vehicle	
 ClearVehicleTasks	c	TASK	0xDBBC7A2432524127		vehicle:Vehicle	
+ClearVehicleTimedExplosion	s	CFX	0x34056BB6		vehicle:Vehicle	
 ClearVehicleXenonLightsCustomColor	c	CFX	0x2867ED8C		vehicle:Vehicle	
 ClearWeatherTypeNowPersistNetwork	c	MISC	0x0CF97F497FE7D048		transitionTimeInMs:integer	
 ClearWeatherTypePersist	c	MISC	0xCCC39339BEF76CF5			
@@ -495,7 +496,7 @@ ControlLandingGear	c	VEHICLE	0xCFC8BE9A5E1FE575		vehicle:Vehicle,state:integer
 ControlMountedWeapon	c	TASK	0xDCFE42068FE0135A	boolean	ped:Ped	
 ConvertPosixTime	c	NETWORK	0xAC97AF97FA68E5D5	integer	posixTime:integer,timeStructure?:integer	
 CopyMemory	c	MISC	0x213AEB2B90CBA7AC	integer	src:any,size:integer	
-CopyVehicleDamages	c	VEHICLE	0xE44A982368A4AF23		sourceVehicle:Vehicle,targetVehicle:Vehicle	
+CopyVehicleDamages	b	VEHICLE	0xE44A982368A4AF23		sourceVehicle:Vehicle,targetVehicle:Vehicle	
 Cos	c	SYSTEM	0xD0FFB162F40A139C	number	value:number	
 CreateAirDefenceAngledArea	c	WEAPON	0x9DA58CDBF6BDBC08	integer	srcCoord1X:number,srcCoord1Y:number,srcCoord1Z:number,srcCoord2X:number,srcCoord2Y:number,srcCoord2Z:number,fWidth:number,weaponPositionX:number,weaponPositionY:number,weaponPositionZ:number,weaponHash:Hash	
 CreateAirDefenceSphere	c	WEAPON	0x91EF34584710BE99	integer	x:number,y:number,z:number,radius:number,weaponPositionX:number,weaponPositionY:number,weaponPositionZ:number,weaponHash:Hash	
@@ -1014,7 +1015,7 @@ FindSpawnPointInDirection	c	MISC	0x6874E2190B0C1972	boolean,vector3	posX:number,
 FindVehicleCarryingThisEntity	c	VEHICLE	0x375E7FC44F21C8AB	Vehicle	entity:Entity	
 FireAirDefenseWeapon	c	WEAPON	0x44F1012B69313374		zoneId:integer,x:number,y:number,z:number	
 FixObjectFragment	c	OBJECT	0xF9C1681347C8BD15		object:Object	
-FixVehicleWindow	c	VEHICLE	0x772282EBEB95E682		vehicle:Vehicle,windowIndex:integer	
+FixVehicleWindow	b	VEHICLE	0x772282EBEB95E682		vehicle:Vehicle,windowIndex:integer	
 FlagPlayerContextInTournament	c	HUD	0xCEF214315D276FD1		toggle:boolean	
 FlagServerAsPrivate	s	CFX	0x13B6855D		private_:boolean	
 FlashAbilityBar	c	HUD	0x02CFBA0C9E9275CE		millisecondsToFlash:integer	
@@ -1123,6 +1124,7 @@ GetBoatBoomPositionRatio	c	VEHICLE	0x6636C535F6CC2725	number	vehicle:Vehicle
 GetBoatBoomPositionRatio_2	c	VEHICLE	0xC1F981A6F74F0C23		vehicle:Vehicle,p1:boolean	
 GetBoatBoomPositionRatio_3	c	VEHICLE	0x0F3B4D4E43177236		vehicle:Vehicle,p1:boolean	
 GetBoatVehicleModelAgility	c	VEHICLE	0x5AA3F878A178C4FC	number	modelHash:Hash	
+GetBothVehicleHeadlightsDamaged	s	CFX	0xEE053B10	boolean	vehicle:Vehicle	
 GetBroadcastFinshedLosSound	c	LOADINGSCREEN	0xB0C56BD3D808D863		toggle:boolean	LoadingscreenSetLoadFreemode
 GetCalmingQuadAtCoords	c	CFX	0x870E8B40	integer	x:number,y:number	
 GetCalmingQuadBounds	c	CFX	0xFF60E63	boolean,integer,integer,integer,integer	waterQuad:integer	
@@ -1462,7 +1464,7 @@ GetIsBoatCapsized	c	VEHICLE	0xBA91D045575699AD	boolean	vehicle:Vehicle
 GetIsDoorValid	c	VEHICLE	0x645F4B6E8499F632	boolean	vehicle:Vehicle,doorIndex:integer	
 GetIsHeliEngineRunning	s	CFX	0x3EFE38D1	boolean	heli:Vehicle	
 GetIsHidef	c	GRAPHICS	0x84ED31191CC5D2C9	boolean		
-GetIsLeftVehicleHeadlightDamaged	c	VEHICLE	0x5EF77C9ADD3B11A3	boolean	vehicle:Vehicle	
+GetIsLeftVehicleHeadlightDamaged	b	VEHICLE	0x5EF77C9ADD3B11A3	boolean	vehicle:Vehicle	
 GetIsLoadingScreenActive	c	DLC	0x10D0A8F259E93EC9	boolean		
 GetIsMultiplayerBrief	c	CAM	0xE3433EADAAF7EE40		toggle:boolean	SetGameplayHintAnimCloseup
 GetIsPedGadgetEquipped	c	WEAPON	0xF731332072F5156C	boolean	ped:Ped,gadgetHash:Hash	
@@ -1471,7 +1473,7 @@ GetIsPlayerDrivingOnHighway	c	PLAYER	0x5FC472C501CCADB3	boolean	playerId:Player
 GetIsPlayerInAnimalForm	c	MISC	0x9689123E3F213AA5	boolean		
 GetIsPreloadedConversationReady	c	AUDIO	0xE73364DB90778FFA	boolean		
 GetIsProjectileTypeInArea	c	MISC	0x8D7A43EC6A5FEA45	boolean,vector3	x1:number,y1:number,z1:number,x2:number,y2:number,z2:number,projectileHash:Hash,ownedByPlayer:boolean	GetCoordsOfProjectileTypeInArea
-GetIsRightVehicleHeadlightDamaged	c	VEHICLE	0xA7ECB73355EB2F20	boolean	vehicle:Vehicle	
+GetIsRightVehicleHeadlightDamaged	b	VEHICLE	0xA7ECB73355EB2F20	boolean	vehicle:Vehicle	
 GetIsSlowRoadFlag	c	PATHFIND	0x4F5070AA58F69279	boolean	nodeID:integer	GetVehicleNodeIsSwitchedOff
 GetIsSubmarineVehicleTransformed	c	VEHICLE	0xA77DC70BD689A1E5	boolean	vehicle:Vehicle	IsVehicleInSubmarineMode
 GetIsTaskActive	c	TASK	0xB0760331C7AA4155	boolean	ped:Ped,taskIndex:integer	
@@ -1613,6 +1615,7 @@ GetNumUnlockedRadioStations	c	AUDIO	0xF1620ECB50E01DE7	integer
 GetNumVehicleMods	c	VEHICLE	0xE38E9162A2500646	integer	vehicle:Vehicle,modType:integer	
 GetNumVehicleWindowTints	c	VEHICLE	0x9D1224004B3A6707	integer		
 GetNumberOfActiveBlips	c	HUD	0x9A3FF3DE163034E8	integer		
+GetNumberOfDamagedVehicleHeadlights	s	CFX	0x889C0FFD	integer	vehicle:Vehicle	
 GetNumberOfDispatchedUnitsForPlayer	c	MISC	0xEB4A0C2D56441717	integer	dispatchService:integer	GetNumDispatchedUnitsForPlayer
 GetNumberOfEvents	c	SCRIPT	0x5F92A689A06620AA	integer	eventGroup:integer	
 GetNumberOfFiresInRange	c	FIRE	0x50CAD495A460B305	integer	x:number,y:number,z:number,radius:number	
@@ -2046,6 +2049,7 @@ GetTvChannel	c	GRAPHICS	0xFC1E275A90D39995	integer
 GetTvVolume	c	GRAPHICS	0x2170813D3DD8661B	number		
 GetTyreHealth	c	VEHICLE	0x55EAB010FAEE9380	number	vehicle:Vehicle,wheelIndex:integer	
 GetTyreWearMultiplier	c	VEHICLE	0x6E387895952F4F71	number	vehicle:Vehicle,wheelIndex:integer	
+GetTyreWearRate	s	CFX	0xB22B8F78	number	vehicle:Vehicle,wheelIndex:integer	
 GetUiLanguageId	c	LOCALIZATION	0x2BDD44CC428A7EAE	integer		GetCurrentLanguage
 GetUsedCreatorModelMemoryPercentage	c	STREAMING	0x3D3D8B3BE5A83D35	number		
 GetUserLanguageId	c	LOCALIZATION	0xA8AE43AEC1A61314	integer		LocalizationGetSystemDateFormat
@@ -2057,11 +2061,14 @@ GetVariantProp	c	FILES	0xD81B7F27BC773E66	Hash,integer,integer	componentHash:Has
 GetVariationChosenForScriptedLine	c	AUDIO	0xAA19F5572C38B564	integer	textLabel:string	
 GetVehicleAcceleration	c	VEHICLE	0x5DD35C8D074E57AE	number	vehicle:Vehicle	
 GetVehicleAlarmTimeLeft	c	CFX	0xC62AAC98	integer	vehicle:Vehicle	
+GetVehicleArmouredWindowHealth	s	CFX	0xAF4D6B9F	number	vehicle:Vehicle,windowIndex:integer	
+GetVehicleArmouredWindowPenetrationDecalsCount	s	CFX	0xC56379DB	integer	vehicle:Vehicle,windowIndex:integer	
 GetVehicleAttachedToCargobob	c	VEHICLE	0x873B82D42AC2B9E5	Vehicle	cargobob:Vehicle	
 GetVehicleAttachedToEntity	c	VEHICLE	0x375E7FC44F21C8AB	Vehicle	entity:Entity	FindVehicleCarryingThisEntity
 GetVehicleBodyHealth	b	VEHICLE	0xF271147EB7B40F12	number	vehicle:Vehicle	
 GetVehicleBodyHealth_2	c	VEHICLE	0xB8EF61207C2393A9	number	vehicle:Vehicle	GetVehicleHealthPercentage
 GetVehicleBombCount	c	VEHICLE	0xEA12BD130D7569A1	integer	aircraft:Vehicle	
+GetVehicleBumperState	s	CFX	0x67C9FAA3	integer	vehicle:Vehicle,front:boolean	
 GetVehicleCanActivateParachute	c	VEHICLE	0xA916396DF4154EE3	boolean	vehicle:Vehicle	
 GetVehicleCauseOfDestruction	c	VEHICLE	0xE495D1EF4C91FD20	Hash	vehicle:Vehicle	
 GetVehicleCheatPowerIncrease	c	CFX	0xC3C93F28	number	vehicle:Vehicle	
@@ -2104,6 +2111,7 @@ GetVehicleDefaultHornIgnoreMods	c	AUDIO	0xACB5DCCA1EC76840	Hash	vehicle:Vehicle
 GetVehicleDefaultHornVariation	c	AUDIO	0xD53F3A29BCE2580E	integer	vehicle:Vehicle	GetVehicleHornSoundIndex
 GetVehicleDeformationAtPos	c	VEHICLE	0x4EC6CFBC7B2E9536	vector3	vehicle:Vehicle,offsetX:number,offsetY:number,offsetZ:number	
 GetVehicleDeformationGetTree	c	VEHICLE	0xA46413066687A328		vehicle:Vehicle,height:number	SetVehicleCeilingHeight
+GetVehicleDeformationLevel	s	CFX	0x745A5000	integer	vehicle:Vehicle,zone:integer	
 GetVehicleDensityMultiplier	c	CFX	0xEF7C6538	number		
 GetVehicleDirtLevel	b	VEHICLE	0x8F17BC8BA08DA62B	number	vehicle:Vehicle	
 GetVehicleDoorAngleRatio	c	VEHICLE	0xFE3F9C29F7B32BD5	number	vehicle:Vehicle,doorIndex:integer	
@@ -2117,6 +2125,7 @@ GetVehicleEngineHealth	b	VEHICLE	0xC45D23BAF168AAB8	number	vehicle:Vehicle
 GetVehicleEngineTemperature	c	CFX	0xF4F495CB	number	vehicle:Vehicle	
 GetVehicleEnveffScale	c	VEHICLE	0xA82819CAC9C4C403	number	vehicle:Vehicle	
 GetVehicleEstimatedMaxSpeed	c	VEHICLE	0x53AF99BAA671CA47	number	vehicle:Vehicle	
+GetVehicleExtinguishedFireCount	s	CFX	0x86142437	integer	vehicle:Vehicle	
 GetVehicleExtraColours	b	VEHICLE	0x3BC4245933A166F7	integer,integer	vehicle:Vehicle	
 GetVehicleFlightNozzlePosition	b	VEHICLE	0xDA62027C8BDB326E	number	aircraft:Vehicle	
 GetVehicleFuelLevel	c	CFX	0x5F739BB8	number	vehicle:Vehicle	
@@ -2126,6 +2135,7 @@ GetVehicleHandbrake	b	CFX	0x483B013C	boolean	vehicle:Vehicle
 GetVehicleHandlingFloat	c	CFX	0x642FC12F	number	vehicle:Vehicle,class_:string,fieldName:string	
 GetVehicleHandlingInt	c	CFX	0x27396C75	integer	vehicle:Vehicle,class_:string,fieldName:string	
 GetVehicleHandlingVector	c	CFX	0xFB341304	vector3	vehicle:Vehicle,class_:string,fieldName:string	
+GetVehicleHasBulletResistantGlass	s	CFX	0x9FDA8733	boolean	vehicle:Vehicle	
 GetVehicleHasFlag	c	CFX	0xD85C9F57	boolean	vehicle:Vehicle,flagIndex:integer	
 GetVehicleHasKers	c	VEHICLE	0x50634E348C8D44EF	boolean	vehicle:Vehicle	
 GetVehicleHasLandingGear	c	VEHICLE	0xE43701C36CAFF1A4	boolean	vehicle:Vehicle	DoesVehicleHaveLandingGear
@@ -2145,6 +2155,9 @@ GetVehicleInteriorColor	c	VEHICLE	0x7D1464D472D32136	integer	vehicle:Vehicle,col
 GetVehicleInteriorColour	b	CFX	0xCCFF3B6E	integer	vehicle:Vehicle,color?:integer	
 GetVehicleIsMercenary	c	VEHICLE	0xD4C4642CB7F50B5D	boolean	vehicle:Vehicle	
 GetVehicleLandingGear	c	VEHICLE	0x9B0F3DCA3DB0F4CD	integer	vehicle:Vehicle	GetLandingGearState
+GetVehicleLastDamageSource	s	CFX	0x963EBB52	Entity	vehicle:Vehicle	
+GetVehicleLastDamageWeapon	s	CFX	0x4A270AD4	Hash	vehicle:Vehicle	
+GetVehicleLastDamagedMaterial	s	CFX	0x42D4DAAB	string	vehicle:Vehicle	
 GetVehicleLayoutHash	c	VEHICLE	0x28D37D4F71AC5C58	Hash	vehicle:Vehicle	
 GetVehicleLightMultiplier	c	CFX	0x7E6E219C	number	vehicle:Vehicle	
 GetVehicleLightsState	b	VEHICLE	0xB91B4C20085BD12F	boolean,boolean,boolean	vehicle:Vehicle	
@@ -2211,8 +2224,11 @@ GetVehicleRoofLiveryCount	c	VEHICLE	0x5ECB40269053C0D4	integer	vehicle:Vehicle
 GetVehicleSteeringAngle	b	CFX	0x1382FCEA	number	vehicle:Vehicle	
 GetVehicleSteeringScale	c	CFX	0x954465DE	number	vehicle:Vehicle	
 GetVehicleSuspensionBounds	c	VEHICLE	0xDF7E3EEB29642C38	vector3,vector3	vehicle:Vehicle	
+GetVehicleSuspensionHealth	b	CFX	0x5F867DC	number	vehicle:Vehicle,wheelIndex:integer	
 GetVehicleSuspensionHeight	c	VEHICLE	0x53952FD2BAA19F17	number	vehicle:Vehicle	
 GetVehicleThrottleOffset	c	CFX	0xD1D07351	number	vehicle:Vehicle	
+GetVehicleTimedExplosionCulprit	s	CFX	0x6395DDA6	Entity	vehicle:Vehicle	
+GetVehicleTimedExplosionTimeLeft	s	CFX	0x1289F86D	integer	vehicle:Vehicle	
 GetVehicleTopSpeedModifier	c	CFX	0x998B7FEE	number	vehicle:Vehicle	
 GetVehicleTotalRepairs	s	CFX	0x9963D5F9	integer	vehicle:Vehicle	
 GetVehicleTrailerVehicle	c	VEHICLE	0x1CDD6BADC297830D	boolean,Vehicle	vehicle:Vehicle,trailer?:Vehicle	
@@ -2224,6 +2240,7 @@ GetVehicleTyresCanBurst	c	VEHICLE	0x678B9BB8C3F58FEB	boolean	vehicle:Vehicle
 GetVehicleWaypointProgress	c	TASK	0x9824CFF8FC66E159	integer	vehicle:Vehicle	
 GetVehicleWaypointTargetPoint	c	TASK	0x416B62AC8B9E5BBD	integer	vehicle:Vehicle	
 GetVehicleWeaponCapacity	c	VEHICLE	0x8181CE2F25CB9BB7	integer	vehicle:Vehicle,weaponIndex:integer	GetVehicleWeaponRestrictedAmmo
+GetVehicleWeaponImpactPointCount	s	CFX	0x43A0C59B	integer	vehicle:Vehicle,direction:integer	
 GetVehicleWeaponReloadTime	c	WEAPON	0xD0AD348FFD7A6868	number	vehicle:Vehicle,seat:integer	
 GetVehicleWeaponRestrictedAmmo	c	VEHICLE	0x8181CE2F25CB9BB7	integer	vehicle:Vehicle,weaponIndex:integer	
 GetVehicleWheelBrakePressure	c	CFX	0x70FE2EFF	number	vehicle:Vehicle,wheelIndex:integer	
@@ -2439,6 +2456,7 @@ HasVehicleParachute	c	VEHICLE	0xBC9CFF381338CB4F	boolean	vehicle:Vehicle	GetVehi
 HasVehiclePhoneExplosiveDevice	c	VEHICLE	0x6ADAABD3068C5235	boolean		
 HasVehicleRecordingBeenLoaded	c	VEHICLE	0x300D614A4C785FC4	boolean	recording:integer,script:string	
 HasVehicleRocketBoost	c	VEHICLE	0x36D782F68B309BDA	boolean	vehicle:Vehicle	GetHasRocketBoost
+HasVehicleTimedExplosion	s	CFX	0x8D88E886	boolean	vehicle:Vehicle	
 HasWeaponAssetLoaded	c	WEAPON	0x36E353271F0E90EE	boolean	weaponHash:Hash	
 HasWeaponGotWeaponComponent	c	WEAPON	0x76A18844E743BF91	boolean	weapon:Object,addonHash:Hash	
 HasWeaponReloadingInVehicle	c	WEAPON	0x8062F07153F4446F	boolean	vehicle:Vehicle,seat:integer	
@@ -3031,8 +3049,9 @@ IsVehicleAttachedToTowTruck	c	VEHICLE	0x146DF9EC4C4B9FD4	boolean	towTruck:Vehicl
 IsVehicleAttachedToTrailer	c	VEHICLE	0xE7CF3C4F9F489F0C	boolean	vehicle:Vehicle	
 IsVehicleAudiblyDamaged	c	AUDIO	0x5DB8010EE71FDEF2	boolean	vehicle:Vehicle	
 IsVehicleBeingHalted	c	VEHICLE	0xC69BB1D832A710EF	boolean	vehicle:Vehicle	
-IsVehicleBumperBouncing	c	VEHICLE	0x27B926779DEB502D	boolean	vehicle:Vehicle,frontBumper:boolean	
-IsVehicleBumperBrokenOff	c	VEHICLE	0x468056A6BB6F3846	boolean	vehicle:Vehicle,front:boolean	
+IsVehicleBlownUp	s	CFX	0x3FDE5771	boolean	vehicle:Vehicle	
+IsVehicleBumperBouncing	b	VEHICLE	0x27B926779DEB502D	boolean	vehicle:Vehicle,frontBumper:boolean	
+IsVehicleBumperBrokenOff	b	VEHICLE	0x468056A6BB6F3846	boolean	vehicle:Vehicle,front:boolean	
 IsVehicleDamaged	c	VEHICLE	0xBCDC5017D3CE1E9E	boolean	vehicle:Vehicle	
 IsVehicleDoorDamaged	c	VEHICLE	0xB8E181E559464527	boolean	veh:Vehicle,doorID:integer	
 IsVehicleDoorFullyOpen	c	VEHICLE	0x3E933CFF7B111C22	boolean	vehicle:Vehicle,doorIndex:integer	
@@ -3046,6 +3065,7 @@ IsVehicleInBurnout	c	VEHICLE	0x1297A88E081430EB	boolean	vehicle:Vehicle
 IsVehicleInGarageArea	c	VEHICLE	0xCEE4490CD57BB3C2	boolean	garageName:string,vehicle:Vehicle	
 IsVehicleInSubmarineMode	c	VEHICLE	0xA77DC70BD689A1E5	boolean	vehicle:Vehicle	
 IsVehicleInteriorLightOn	c	CFX	0xA411F72C	boolean	vehicle:Vehicle	
+IsVehicleLightBroken	s	CFX	0x7AFC9DF5	boolean	vehicle:Vehicle,lightIndex:integer	
 IsVehicleModGen9Exclusive	c	VEHICLE	0x00834EAC4A96E010	boolean	vehicle:Vehicle,modType:integer,modIndex:integer	
 IsVehicleModHswExclusive	c	VEHICLE	0x00834EAC4A96E010	boolean	vehicle:Vehicle,modType:integer,modIndex:integer	IsVehicleModGen9Exclusive
 IsVehicleModLoadDone	c	VEHICLE	0x9A83F5F9963775EF	boolean	vehicle:Vehicle	HaveVehicleModsStreamedIn
@@ -3067,6 +3087,7 @@ IsVehicleSeatAccessible	c	VEHICLE	0x639431E895B9AA57	boolean	ped:Ped,vehicle:Veh
 IsVehicleSeatFree	c	VEHICLE	0x22AC59A870E6A669	boolean	vehicle:Vehicle,seatIndex:integer	
 IsVehicleShopResprayAllowed	c	VEHICLE	0x8D474C8FAEFF6CDE	boolean	vehicle:Vehicle	IsVehicleSprayable
 IsVehicleSirenAudioOn	c	VEHICLE	0xB5CC40FBCB586380	boolean	vehicle:Vehicle	
+IsVehicleSirenBroken	s	CFX	0xC2FD0CDF	boolean	vehicle:Vehicle,sirenIndex:integer	
 IsVehicleSirenOn	b	VEHICLE	0x4C9BF537BE2634B2	boolean	vehicle:Vehicle	
 IsVehicleSirenSoundOn	c	VEHICLE	0xB5CC40FBCB586380	boolean	vehicle:Vehicle	IsVehicleSirenAudioOn
 IsVehicleSlipstreamLeader	c	VEHICLE	0x48C633E94A8142A7	boolean	vehicle:Vehicle	
@@ -3081,7 +3102,9 @@ IsVehicleVisible	c	VEHICLE	0xAA0A52D24FB98293	boolean	vehicle:Vehicle
 IsVehicleWanted	c	CFX	0xA7DAF7C	boolean	vehicle:Vehicle	
 IsVehicleWeaponDisabled	c	VEHICLE	0x563B65A643ED072E	boolean	weaponHash:Hash,vehicle:Vehicle,owner:Ped	
 IsVehicleWheelBrokenOff	c	CFX	0xCF1BC668	boolean	vehicle:Vehicle,wheelIndex:integer	
+IsVehicleWheelOnFire	b	CFX	0xF9E9CF37	boolean	vehicle:Vehicle,wheelIndex:integer	
 IsVehicleWindowIntact	b	VEHICLE	0x46E571A0E20D01F1	boolean	vehicle:Vehicle,windowIndex:integer	
+IsVehicleWrecked	s	CFX	0xA067F5AD	boolean	vehicle:Vehicle	
 IsWarningMessageActive	c	HUD	0xE18B138FABC53103	boolean		
 IsWarningMessageActive_2	c	HUD	0xAF42195A42C63BBA	boolean		IsWarningMessageReadyForControl
 IsWarningMessageReadyForControl	c	HUD	0xAF42195A42C63BBA	boolean		
@@ -8827,6 +8850,7 @@ SetPlayerVehicleAlarmAudioActive	c	AUDIO	0x6FDDAD856E36988A		vehicle:Vehicle,act
 SetPlayerVehicleDamageModifier	c	PLAYER	0xA50E117CDDF82F0C		player:Player,modifier:number	
 SetPlayerVehicleDefenseModifier	c	PLAYER	0x4C60E6EFDAFF2462		player:Player,modifier:number	
 SetPlayerVisibleLocally	c	NETWORK	0xFAA10F1FAFB11AF2		player:Player,toggle:boolean	
+SetPlayerVoiceProximityRange	s	CFX	0xE7AC6D1B	boolean	playerSrc:string,proximityRange:number	
 SetPlayerWantedCentrePosition	c	PLAYER	0x520E541A97A13354	vector3	player:Player,p2:boolean,p3:boolean	
 SetPlayerWantedLevel	b	PLAYER	0x39FF19C64EF7DA5B		player:Player,wantedLevel:integer,delayedResponse:boolean	
 SetPlayerWantedLevelNoDrop	c	PLAYER	0x340E61DE7F471565		player:Player,wantedLevel:integer,delayedResponse:boolean	
@@ -9049,6 +9073,7 @@ SetTyreHealth	c	VEHICLE	0x74C68EF97645E79D		vehicle:Vehicle,wheelIndex:integer,h
 SetTyreSoftnessMultiplier	c	VEHICLE	0x392183BB9EA57697		vehicle:Vehicle,wheelIndex:integer,multiplier:number	
 SetTyreTractionLossMultiplier	c	VEHICLE	0xC970D0E0FC31D768		vehicle:Vehicle,wheelIndex:integer,multiplier:number	
 SetTyreWearMultiplier	c	VEHICLE	0x01894E2EDE923CA2		vehicle:Vehicle,wheelIndex:integer,multiplier:number	
+SetTyreWearRate	s	CFX	0xC212205D		vehicle:Vehicle,wheelIndex:integer,wearRate:number	
 SetUiLayer	c	GRAPHICS	0x61BB1D9B3A95D802		order:integer	SetScriptGfxDrawOrder
 SetUnkBoolN_0x102ForSubmarineVehicleTask	c	VEHICLE	0x41B9FB92EDED32A6		vehicle:Vehicle,useAlternateInput:boolean	SetTransformToSubmarineUsesAlternateInput
 SetUnkFloatN_0x104ForSubmarineVehicleTask	c	VEHICLE	0x498218259FB7C72D		vehicle:Vehicle,transformRate:number	SetTransformRateForAnimation
@@ -9074,6 +9099,8 @@ SetVehicleAlarm	b	VEHICLE	0xCDE5E70C1DDB954C		vehicle:Vehicle,state:boolean
 SetVehicleAlarmTimeLeft	c	CFX	0xC108EE6F		vehicle:Vehicle,time:integer	
 SetVehicleAllowHomingMissleLockon	c	VEHICLE	0x7D6F9A3EF26136A0		vehicle:Vehicle,toggle:boolean,p2:boolean	
 SetVehicleAllowNoPassengersLockon	c	VEHICLE	0x5D14D4154BFE7B2C		veh:Vehicle,toggle:boolean	
+SetVehicleArmouredWindowHealth	s	CFX	0xB2F6BD8A		vehicle:Vehicle,windowIndex:integer,health:number	
+SetVehicleArmouredWindowPenetrationDecalsCount	s	CFX	0x8993C2F		vehicle:Vehicle,windowIndex:integer,count:integer	
 SetVehicleAsNoLongerNeeded	c	ENTITY	0x629BFA74418D6239	Vehicle	vehicle:Vehicle	
 SetVehicleAudio	c	AUDIO	0x4F0C413926060B38		vehicle:Vehicle,gameObjectName:string	ForceUseAudioGameObject
 SetVehicleAudioBodyDamageFactor	c	AUDIO	0x01BB4D577D38BD9E		vehicle:Vehicle,intensity:number	
@@ -9087,6 +9114,7 @@ SetVehicleBoostActive	c	AUDIO	0x4A04DE7CAB2739A1		vehicle:Vehicle,toggle:boolean
 SetVehicleBrake	c	VEHICLE	0xE4E2FD323574965C		vehicle:Vehicle,toggle:boolean	
 SetVehicleBrakeLights	c	VEHICLE	0x92B35082E0B42F66		vehicle:Vehicle,toggle:boolean	
 SetVehicleBulldozerArmPosition	c	VEHICLE	0xF8EBCCC96ADB9FB7		vehicle:Vehicle,position:number,p2:boolean	
+SetVehicleBumperState	s	CFX	0x4716182C		vehicle:Vehicle,front:boolean,state:integer	
 SetVehicleBurnout	c	VEHICLE	0xFB8794444A7D60FB		vehicle:Vehicle,toggle:boolean	
 SetVehicleCanBeLockedOn	c	VEHICLE	0x1DDA078D12879EEE		vehicle:Vehicle,canBeLockedOn:boolean,unk:boolean	
 SetVehicleCanBeTargetted	c	VEHICLE	0x3750146A28097A82		vehicle:Vehicle,state:boolean	
@@ -9115,7 +9143,8 @@ SetVehicleDamage	c	VEHICLE	0xA1DD317EA8FD4F29		vehicle:Vehicle,xOffset:number,yO
 SetVehicleDamageModifier	c	VEHICLE	0x4E20D2A627011E8E	any	vehicle:Vehicle,p1:number	
 SetVehicleDashboardColor	c	VEHICLE	0x6089CDF6A57F326C		vehicle:Vehicle,color:integer	
 SetVehicleDashboardColour	c	VEHICLE	0x6089CDF6A57F326C		vehicle:Vehicle,color:integer	SetVehicleDashboardColor
-SetVehicleDeformationFixed	c	VEHICLE	0x953DA1E1B12C0491		vehicle:Vehicle	
+SetVehicleDeformationFixed	b	VEHICLE	0x953DA1E1B12C0491		vehicle:Vehicle	
+SetVehicleDeformationLevel	s	CFX	0xCE5DA6C6		vehicle:Vehicle,zone:integer,level:integer	
 SetVehicleDensityMultiplierThisFrame	c	VEHICLE	0x245A6883D966D537		multiplier:number	
 SetVehicleDirtLevel	b	VEHICLE	0x79D3B596FE44EE8B		vehicle:Vehicle,dirtLevel:number	
 SetVehicleDisableTowing	c	VEHICLE	0x2B6747FAA9DB9D6B		vehicle:Vehicle,toggle:boolean	
@@ -9136,7 +9165,7 @@ SetVehicleDoorsLockedForUnk	c	VEHICLE	0x203B527D1B77904C		vehicle:Vehicle,toggle
 SetVehicleDoorsShut	c	VEHICLE	0x781B3D62BB013EF5		vehicle:Vehicle,closeInstantly:boolean	
 SetVehicleDropsMoneyWhenBlownUp	c	VEHICLE	0x068F64F2470F9656		vehicle:Vehicle,toggle:boolean	
 SetVehicleEngineCanDegrade	c	VEHICLE	0x983765856F2564F9		vehicle:Vehicle,toggle:boolean	
-SetVehicleEngineHealth	c	VEHICLE	0x45F6D8EEF34ABEF1		vehicle:Vehicle,health:number	
+SetVehicleEngineHealth	b	VEHICLE	0x45F6D8EEF34ABEF1		vehicle:Vehicle,health:number	
 SetVehicleEngineOn	c	VEHICLE	0x2497C4717C8B881E		vehicle:Vehicle,value:boolean,instantly:boolean,disableAutoStart:boolean	
 SetVehicleEnginePowerMultiplier	c	VEHICLE	0x93A3996368C94158		vehicle:Vehicle,percentChange:number	ModifyVehicleTopSpeed
 SetVehicleEngineTemperature	c	CFX	0x6C93C4A9		vehicle:Vehicle,temperature:number	
@@ -9149,7 +9178,7 @@ SetVehicleExplosiveDamageScale	c	VEHICLE	0x84D7FFD223CAAFFD	any	vehicle:Vehicle,
 SetVehicleExtendedRemovalRange	c	VEHICLE	0x79DF7E806202CE01		vehicle:Vehicle,range:integer	
 SetVehicleExtra	c	VEHICLE	0x7EE3A3C5E4A40CC9		vehicle:Vehicle,extraId:integer,disable:boolean	
 SetVehicleExtraColours	c	VEHICLE	0x2036F561ADD12E33		vehicle:Vehicle,pearlescentColor:integer,wheelColor:integer	
-SetVehicleFixed	c	VEHICLE	0x115722B1B9C14C1C		vehicle:Vehicle	
+SetVehicleFixed	b	VEHICLE	0x115722B1B9C14C1C		vehicle:Vehicle	
 SetVehicleFlag	c	CFX	0x63AE1A34	boolean	vehicle:Vehicle,flagIndex:integer,value:boolean	
 SetVehicleFlightNozzlePosition	c	VEHICLE	0x30D779DE7C4F6DD3		vehicle:Vehicle,angleRatio:number	
 SetVehicleFlightNozzlePositionImmediate	c	VEHICLE	0x9AA47FFF660CB932		vehicle:Vehicle,angle:number	
@@ -9199,6 +9228,7 @@ SetVehicleJetEngineOn	c	VEHICLE	0xB8FBC8B1330CA9B4		vehicle:Vehicle,toggle:boole
 SetVehicleKeepEngineOnWhenAbandoned	c	VEHICLE	0xB8FBC8B1330CA9B4		vehicle:Vehicle,toggle:boolean	
 SetVehicleKersAllowed	c	VEHICLE	0x99C82F8A139F3E4E		vehicle:Vehicle,toggle:boolean	
 SetVehicleLandingGear	c	VEHICLE	0xCFC8BE9A5E1FE575		vehicle:Vehicle,state:integer	ControlLandingGear
+SetVehicleLightBroken	s	CFX	0x611A3234		vehicle:Vehicle,lightIndex:integer,broken:boolean	
 SetVehicleLightMultiplier	c	VEHICLE	0xB385454F8791F57C		vehicle:Vehicle,multiplier:number	
 SetVehicleLights	c	VEHICLE	0x34E710FF01247C5A		vehicle:Vehicle,state:integer	
 SetVehicleLightsCanBeVisiblyDamaged	c	VEHICLE	0x1AA8A837D2169D94		vehicle:Vehicle,toggle:boolean	SetVehicleHasUnbreakableLights
@@ -9231,7 +9261,7 @@ SetVehicleParachuteActive	c	VEHICLE	0x0BFFB028B3DD0A97		vehicle:Vehicle,active:b
 SetVehicleParachuteModel	c	VEHICLE	0x4D610C6B56031351		vehicle:Vehicle,modelHash:Hash	
 SetVehicleParachuteTextureVariatiion	c	VEHICLE	0xA74AD2439468C883		vehicle:Vehicle,textureVariation:integer	SetVehicleParachuteTextureVariation
 SetVehicleParachuteTextureVariation	c	VEHICLE	0xA74AD2439468C883		vehicle:Vehicle,textureVariation:integer	
-SetVehiclePetrolTankHealth	c	VEHICLE	0x70DB57649FA8D0D8		vehicle:Vehicle,health:number	
+SetVehiclePetrolTankHealth	b	VEHICLE	0x70DB57649FA8D0D8		vehicle:Vehicle,health:number	
 SetVehiclePitchBias	c	CFX	0x2A6CC9F2		vehicle:Vehicle,value:number	
 SetVehiclePopulationBudget	c	STREAMING	0xCB9E1EB3BE2AF4E9		p0:integer	
 SetVehicleProvidesCover	c	VEHICLE	0x5AFEEDD9BB2899D7		vehicle:Vehicle,toggle:boolean	
@@ -9254,6 +9284,7 @@ SetVehicleShadowEffect	c	VEHICLE	0xF0E4BA16D1DB546C		vehicle:Vehicle,p1:integer,
 SetVehicleShootAtTarget	c	VEHICLE	0x74CD9A9327A282EA		driver:Ped,entity:Entity,xTarget:number,yTarget:number,zTarget:number	
 SetVehicleSilent	c	VEHICLE	0x9D44FCCE98450843		vehicle:Vehicle,toggle:boolean	
 SetVehicleSiren	c	VEHICLE	0xF4924635A19EB37D		vehicle:Vehicle,toggle:boolean	
+SetVehicleSirenBroken	s	CFX	0xCA955101		vehicle:Vehicle,sirenIndex:integer,broken:boolean	
 SetVehicleSt	c	VEHICLE	0x1CF38D529D7441D9		vehicle:Vehicle,toggle:boolean	
 SetVehicleStartupRevSound	c	AUDIO	0xF1F8157B8C3F171C		vehicle:Vehicle,soundName:string,setName:string	
 SetVehicleSteerBias	c	VEHICLE	0x42A8EC77D5150CBE		vehicle:Vehicle,value:number	
@@ -9261,16 +9292,17 @@ SetVehicleSteeringAngle	c	CFX	0xFFCCC2EA		vehicle:Vehicle,angle:number
 SetVehicleSteeringBiasScalar	c	VEHICLE	0x9007A2F21DC108D4		vehicle:Vehicle,scalar:number	
 SetVehicleSteeringScale	c	CFX	0xEB46596F		vehicle:Vehicle,scale:number	
 SetVehicleStrong	c	VEHICLE	0x3E8C8727991A8A0B		vehicle:Vehicle,toggle:boolean	
+SetVehicleSuspensionHealth	b	CFX	0x1E99D55E		vehicle:Vehicle,wheelIndex:integer,health:number	
 SetVehicleSuspensionHeight	c	CFX	0xB3439A01		vehicle:Vehicle,newHeight:number	
 SetVehicleTankTurretPosition	c	VEHICLE	0x56B94C6D7127DFBA		vehicle:Vehicle,position:number,p2:boolean	
-SetVehicleTimedExplosion	c	VEHICLE	0x2E0A74E1002380B1		vehicle:Vehicle,ped:Ped,toggle:boolean	
+SetVehicleTimedExplosion	b	VEHICLE	0x2E0A74E1002380B1		vehicle:Vehicle,ped:Ped,toggle:boolean		0xDB8CB8E2		vehicle:Vehicle,culprit:Ped,timeFromNow:integer
 SetVehicleTowTruckArmPosition	c	VEHICLE	0xFE54B92A344583CA		vehicle:Vehicle,position:number	
 SetVehicleTransformState	c	VEHICLE	0x438B3D7CA026FE91		vehicle:Vehicle,state:number	SetSpecialFlightModeTargetRatio
 SetVehicleTurboPressure	c	CFX	0x6485615E		vehicle:Vehicle,pressure:number	
 SetVehicleTurretSpeedThisFrame	c	VEHICLE	0x1093408B4B9D1146		vehicle:Vehicle,speed:number	
 SetVehicleTurretUnk	c	VEHICLE	0xC60060EB0D8AC7B1		vehicle:Vehicle,index:integer,toggle:boolean	
-SetVehicleTyreBurst	c	VEHICLE	0xEC6A202EE4960385		vehicle:Vehicle,index:integer,onRim:boolean,p3:number	
-SetVehicleTyreFixed	c	VEHICLE	0x6E13FC662B882D1D		vehicle:Vehicle,tyreIndex:integer	
+SetVehicleTyreBurst	b	VEHICLE	0xEC6A202EE4960385		vehicle:Vehicle,index:integer,onRim:boolean,p3:number	
+SetVehicleTyreFixed	b	VEHICLE	0x6E13FC662B882D1D		vehicle:Vehicle,tyreIndex:integer	
 SetVehicleTyreSmokeColor	c	VEHICLE	0xB5BA80F839791C0F		vehicle:Vehicle,r:integer,g:integer,b:integer	
 SetVehicleTyresCanBurst	c	VEHICLE	0xEB9DC3C7D8596C46		vehicle:Vehicle,toggle:boolean	
 SetVehicleUndriveable	c	VEHICLE	0x8ABA6AF54B942B95		vehicle:Vehicle,toggle:boolean	
@@ -9281,12 +9313,14 @@ SetVehicleUseHornButtonForNitrous	c	VEHICLE	0x1980F68872CC2C3D		vehicle:Vehicle,
 SetVehicleUsePlayerLightSettings	c	VEHICLE	0xC45C27EF50F36ADC		vehicle:Vehicle,toggle:boolean	
 SetVehicleUsesLargeRearRamp	c	VEHICLE	0xCAC66558B944DA67		vehicle:Vehicle,toggle:boolean	
 SetVehicleWeaponCapacity	c	VEHICLE	0x44CD1F493DB2A0A6		vehicle:Vehicle,weaponIndex:integer,ammoCount:integer	SetVehicleWeaponRestrictedAmmo
+SetVehicleWeaponImpactPointCount	s	CFX	0x521A448		vehicle:Vehicle,direction:integer,count:integer	
 SetVehicleWeaponRestrictedAmmo	c	VEHICLE	0x44CD1F493DB2A0A6		vehicle:Vehicle,weaponIndex:integer,ammoCount:integer	
 SetVehicleWeaponsDisabled	c	VEHICLE	0x86B4B6212CB8B627		vehicle:Vehicle,weaponSlot:integer	
 SetVehicleWheelBrakePressure	c	CFX	0xE80F4E31		vehicle:Vehicle,wheelIndex:integer,pressure:number	
 SetVehicleWheelFlags	c	CFX	0xD2B9E90D		vehicle:Vehicle,wheelIndex:integer,flags:integer	
 SetVehicleWheelHealth	c	CFX	0xB22ECEFD		vehicle:Vehicle,wheelIndex:integer,health:number	
 SetVehicleWheelIsPowered	c	CFX	0xBD5291A0		vehicle:Vehicle,wheelIndex:integer,powered:boolean	
+SetVehicleWheelOnFire	b	CFX	0xC3E1F461		vehicle:Vehicle,wheelIndex:integer,toggle:boolean	
 SetVehicleWheelPower	c	CFX	0xC6146043		vehicle:Vehicle,wheelIndex:integer,power:number	
 SetVehicleWheelRimColliderSize	c	CFX	0xF380E184		vehicle:Vehicle,wheelIndex:integer,value:number	
 SetVehicleWheelRotationSpeed	c	CFX	0x35ED100D		vehicle:Vehicle,wheelIndex:integer,speed:number	
@@ -9304,6 +9338,7 @@ SetVehicleWheelsCanBreak	c	VEHICLE	0x29B18B4FD460CA8F		vehicle:Vehicle,enabled:b
 SetVehicleWheelsCanBreakOffWhenBlowUp	c	VEHICLE	0xA37B9A517B133349		vehicle:Vehicle,toggle:boolean	
 SetVehicleWheelsDealDamage	c	VEHICLE	0x2970EAA18FD5E42F		vehicle:Vehicle,toggle:boolean	
 SetVehicleWindowTint	c	VEHICLE	0x57C51E6BAD752696		vehicle:Vehicle,tint:integer	
+SetVehicleWrecked	s	CFX	0xCBBF47AC		vehicle:Vehicle,blowUp:boolean	
 SetVehicleXenonLightsColor	c	VEHICLE	0xE41033B25D003A07		vehicle:Vehicle,color:integer	
 SetVehicleXenonLightsColour	c	VEHICLE	0xE41033B25D003A07		vehicle:Vehicle,color:integer	SetVehicleXenonLightsColor
 SetVehicleXenonLightsCustomColor	c	CFX	0x1683E7F0		vehicle:Vehicle,red:integer,green:integer,blue:integer	
@@ -9416,7 +9451,7 @@ SkipToEndAndStopPlaybackRecordedVehicle	c	VEHICLE	0xAB8E2EDA0C0A5883		vehicle:Ve
 SkipToNextScriptedConversationLine	c	AUDIO	0x9663FE6B7A61EB00			
 SlerpNearQuaternion	c	MISC	0xF2F6A2FA49278625	number,number,number,number	t:number,x:number,y:number,z:number,w:number,x1:number,y1:number,z1:number,w1:number	
 SlideObject	c	OBJECT	0x2FDFF4107B8C1147	boolean	object:Object,toX:number,toY:number,toZ:number,speedX:number,speedY:number,speedZ:number,collision:boolean	
-SmashVehicleWindow	c	VEHICLE	0x9E5B5E4D2CCD2259		vehicle:Vehicle,windowIndex:integer	
+SmashVehicleWindow	b	VEHICLE	0x9E5B5E4D2CCD2259		vehicle:Vehicle,windowIndex:integer	
 SoundVehicleHornThisFrame	c	AUDIO	0x9C11908013EA4715		vehicle:Vehicle	
 SpawnpointsCancelSearch	c	PED	0xFEE4A5459472A9F8			
 SpawnpointsGetNumSearchResults	c	PED	0xA635C11B8C44AFC2	integer		
